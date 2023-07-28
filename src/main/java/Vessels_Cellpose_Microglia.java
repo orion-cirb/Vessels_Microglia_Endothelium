@@ -5,7 +5,7 @@
  */
 
 
-
+import Vessels_Microglia_Tools.QuantileBasedNormalization;
 import Vessels_Microglia_Tools.Tools;
 import ij.*;
 import ij.gui.Roi;
@@ -30,12 +30,9 @@ import java.util.List;
 import loci.common.services.ServiceFactory;
 import loci.formats.meta.IMetadata;
 import loci.formats.services.OMEXMLService;
-import loci.plugins.BF;
-import loci.plugins.in.ImporterOptions;
 import loci.plugins.util.ImageProcessorReader;
 import mcib3d.geom2.Objects3DIntPopulation;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang.ArrayUtils;
 
 
 public class Vessels_Cellpose_Microglia implements PlugIn {
@@ -98,10 +95,28 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             // Write headers results for results files
             FileWriter results = new FileWriter(outDirResults + "Results.xls", false);
             BufferedWriter outPutResults = new BufferedWriter(results);
-            outPutResults.write("ImageName\tRoi name\t#Microglia cell\tCell volume (µm3)\tCell volume coloc with vessel(µm3)\tCentroid cell distance to vessel (µm)\tBorder cell distance to vessel (µm)\tVessel diameter (µm)\tVessel volume (µm3)"
-                    + "\tTotal vessel length (µm)\tMean length (µm)\tLength longest Branch (µm)\tNb branches\tNb junctions\tnb endpoints\tVessel mean diameter (µm)\n");
+            outPutResults.write("ImageName\tRoi name\tRoi volume (µm3)\t#Microglia cell\tCell volume (µm3)\tCell volume coloc with vessel(µm3)\tCentroid cell distance to vessel (µm)\tBorder cell distance to vessel (µm)\tVessel diameter (µm)\tVessel volume (µm3)"
+                    + "\tTotal vessel length (µm)\tMean length (µm)\tLength longest Branch (µm)\tNb branches\tNb junctions\tnb endpoints\tMean vessel diameter (µm)"
+                    + "\tStd vessel diameter (µm)\tMin vessel diameter (µm)\tMax vessel diameter (µm)\n");
             outPutResults.flush();
-           
+            
+           // Create output folder for preprocessed file
+            String processDir = inDir + File.separator + "Preprocessed"+ File.separator;
+            File procDir = new File(processDir);
+            if (!Files.exists(Paths.get(processDir))) {
+                procDir.mkdir();
+                // Normalise all images
+                IJ.showStatus("Normalisation starting...");
+                tools.preprocessFile(imageDir, processDir, imageFiles, channelNames, channels);
+                QuantileBasedNormalization qbn = new QuantileBasedNormalization();
+                // vessels normalization
+                qbn.run(processDir, imageFiles, "-Vessels");
+                // microglia
+                if (tools.cellsDetection.equals("CellPose"))
+                    qbn.run(processDir, imageFiles, "-Micro");
+                IJ.showStatus("Normalisation done");
+            }
+               
                     
             // Do cellpose detection on all files
             IJ.setForegroundColor(255, 255, 255);
@@ -111,34 +126,26 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             
             for (String f : imageFiles) {
                 String rootName = FilenameUtils.getBaseName(f);
+                String fileName = processDir+rootName+"-Vessels-normalized.tif"; 
                 String roiFileName = null;
                 if (new File(imageDir+rootName+".zip").exists())
                     roiFileName = imageDir+rootName+".zip";
                 else if (new File(imageDir+rootName+".roi").exists())
                     roiFileName = imageDir+rootName+".roi";
-                reader.setId(f);
-                ImporterOptions options = new ImporterOptions();
-                options.setId(f);
-                options.setSplitChannels(true);
-                options.setQuiet(true);
-                options.setColorMode(ImporterOptions.COLOR_MODE_GRAYSCALE);
-                options.setCrop(true);
-                int indexCh = ArrayUtils.indexOf(channelNames, channels[0]);
-                options.setCBegin(0, indexCh);
-                options.setCEnd(0, indexCh); 
-                ImagePlus imgVessels = BF.openImagePlus(options)[0];
-                indexCh = ArrayUtils.indexOf(channelNames, channels[0]);
-                options.setCBegin(0, indexCh);
-                options.setCEnd(0, indexCh);
-                ImagePlus imgMicro = BF.openImagePlus(options)[0];
+                reader.setId(fileName);
+                ImagePlus imgVessels = IJ.openImage(fileName);
+                fileName = (tools.cellsDetection.equals("CellPose")) ? processDir+rootName+"-Micro-normalized.tif" : processDir+rootName+"-Micro.tif"; 
+                ImagePlus imgMicro = IJ.openImage(fileName);
+                
                 //do vessel segmentation
-                String model = tools.modelVessel;
                 System.out.println("Vessels segmentation starting image " + rootName +" ...");
-                Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, model, 40);
+                Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, tools.modelVessel, 40);
+                
                 //do microglia segmentation
-                model = tools.modelMicro;
                 System.out.println("Microglia segmentation starting image " + rootName + " ...");
-                Objects3DIntPopulation microPop = tools.cellposeDetection(imgMicro, model, 30);
+                Objects3DIntPopulation microPop = (tools.cellsDetection.equals("CellPose")) ? tools.cellposeDetection(imgMicro, tools.modelMicro, 30) :
+                        tools.microgliaCells(imgMicro);
+               
                 // Load Roi
                 List<Roi> rois = new ArrayList();
                 if (roiFileName == null) {

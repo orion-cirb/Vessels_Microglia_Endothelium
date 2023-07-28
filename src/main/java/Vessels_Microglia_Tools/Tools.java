@@ -6,9 +6,7 @@ import Vessels_Microglia_Tools.Cellpose.CellposeTaskSettings;
 import fiji.util.gui.GenericDialogPlus;
 import ij.IJ;
 import ij.ImagePlus;
-import ij.Prefs;
 import ij.gui.Roi;
-import ij.gui.WaitForUserDialog;
 import ij.measure.Calibration;
 import ij.plugin.Duplicator;
 import ij.util.ThreadUtil;
@@ -49,19 +47,18 @@ import net.haesleinhuepf.clijx.bonej.BoneJSkeletonize3D;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.math3.stat.StatUtils;
+import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 import sc.fiji.analyzeSkeleton.AnalyzeSkeleton_;
 import sc.fiji.analyzeSkeleton.Point;
 import sc.fiji.analyzeSkeleton.SkeletonResult;
-import trainableSegmentation.WekaSegmentation;
-import weka.core.Utils;
 
 
 
 public class Tools {
         
     // min size for objects
-    public double minVessels = 100;
-    public double minMicro = 50;
+    public double minVessels = 50;
+    public double minMicro = 20;
     // max size for objects
     public double maxVessels = Double.MAX_VALUE;
     public double maxMicro = Double.MAX_VALUE;
@@ -69,12 +66,16 @@ public class Tools {
     public double pixVol;
     public final ImageIcon icon = new ImageIcon(this.getClass().getResource("/Orion_icon.png"));
     
-    public String cellposeEnvDir = IJ.isWindows()? System.getProperty("user.home")+File.separator+"miniconda3"+File.separator+"envs"+File.separator+"CellPose" : "/opt/miniconda3/envs/cellpose";
-    public String modelMicro = "cyto2";
+    public final String cellposeEnvDir = IJ.isWindows()? System.getProperty("user.home")+File.separator+"miniconda3"+File.separator+"envs"+File.separator+"CellPose" : "/opt/miniconda3/envs/cellpose";
+    private final String cellposeModelsPath = (IJ.isWindows()) ? System.getProperty("user.home")+"\\.cellpose\\models\\" : System.getProperty("user.home")+"/.cellpose/models/"; 
+    public final String modelMicro = "cyto2";
     public int cellposeDiamMicro = 30;
     public double cellposeStitchTh = 0.5;
-    public String modelVessel = "vessels";
-     public int cellposeDiamVessel = 40;
+    public final String modelVessel = cellposeModelsPath+"vessels";
+    public int cellposeDiamVessel = 40;
+    public String cellsDetection = "DOG";
+    private final int sigma1DOG = 1;
+    private final int sigma2DOG = 3;
     
     private final CLIJ2 clij2 = CLIJ2.getInstance();
     
@@ -154,32 +155,6 @@ public class Tools {
         return(images);
     }
     
-      /**
-     * Find weka model in folder
-     * @param imagesFolder
-     * @param model
-     * @return 
-     */
-    public String findWekaModel(String imagesFolder, String model) {
-        String modelFile = "";
-        ArrayList<String> files = findImages(imagesFolder, "model");
-        if (files.isEmpty()) {
-            System.out.println("No Model found in "+imagesFolder);
-            return null;
-        }
-        for (String f : files) {
-            String name = FilenameUtils.getBaseName(f);
-            if (model.equals("vessel") && name.equals("vessel")) {
-                modelFile = f;
-                break;
-            }
-            if (model.equals("microglia") && name.equals("microglia")) {
-                modelFile = f;
-                break;
-            }
-        }        
-        return modelFile;
-    }
         
     
     /**
@@ -187,36 +162,29 @@ public class Tools {
      */
     public String[] dialog(String imagesDir, String[] channels) {
         String[] chNames = {"Vessels : ", "Microglia : "};
+        String[] cellDetection = {"DOG", "CellPose"};
         GenericDialogPlus gd = new GenericDialogPlus("Parameters");
         gd.setInsets​(0, 15, 0);
         gd.addImage(icon);
-        
         gd.addMessage("Channels selection", Font.getFont("Monospace"), Color.blue);
         for (int n = 0; n < chNames.length; n++) {
             gd.addChoice(chNames[n], channels, channels[n]);
         }
-        gd.addDirectoryField​("Cellpose env directory", cellposeEnvDir);
-        gd.addMessage("Models for vessels and microglia detections", Font.getFont("Monospace"), Color.blue);
-        gd.addFileField("Model for vessels", modelVessel);
-        gd.addFileField("Model for microglia", modelMicro);
+        gd.addMessage("Microglial cells detection method", Font.getFont("Monospace"), Color.blue);
+        gd.addChoice("Detection : ", cellDetection, cellsDetection);
         gd.addMessage("Size filter", Font.getFont("Monospace"), Color.blue);
         gd.addNumericField("Min vessels size (µm3) : ", minVessels, 2);
         gd.addNumericField("Min microglia size (µm3) : ", minMicro, 2);
         gd.addMessage("Image calibration", Font.getFont("Monospace"), Color.blue);
         gd.addNumericField("xy calibration (µm)", cal.pixelHeight,3);
         gd.addNumericField("z calibration (µm)", cal.pixelDepth,3);
-        
         gd.showDialog();
         String[] chChoices = new String[chNames.length];
         for (int n = 0; n < chChoices.length; n++) 
             chChoices[n] = gd.getNextChoice();
-        
         if (gd.wasCanceled())
                 chChoices = null;
-        if (modelVessel.isEmpty() || modelMicro.isEmpty()) {
-            modelVessel = gd.getNextString();
-            modelMicro = gd.getNextString();
-        }
+        cellsDetection = gd.getNextChoice();
         minVessels = gd.getNextNumber();
         minMicro = gd.getNextNumber();
         cal.pixelHeight = gd.getNextNumber();
@@ -439,6 +407,89 @@ public class Tools {
         catch (Exception e) { throw e; }
     }
     
+    /**
+     * Max/Min (closing) filter using CLIJ2
+     * @param img
+     * @param sizeXY
+     * @param sizeZ
+     * @return 
+     */ 
+    private ImagePlus close_filter(ImagePlus img, double sizeXY, double sizeZ) {
+       ClearCLBuffer imgCL = clij2.push(img);
+       ClearCLBuffer imgCLMax = clij2.create(imgCL);
+       clij2.maximum3DBox(imgCL, imgCLMax, sizeXY, sizeXY, sizeZ);
+       clij2.release(imgCL);
+       ClearCLBuffer imgCLMin = clij2.create(imgCLMax);
+       clij2.minimum3DBox(imgCLMax, imgCLMin, sizeXY, sizeXY, sizeZ);
+       clij2.release(imgCLMax);
+       return(clij2.pull(imgCLMin));
+    }  
+    
+     /**
+     * Difference of Gaussians 
+     * Using CLIJ2
+     * @param img
+     * @param size1
+     * @param size2
+     * @return imgGauss
+     */ 
+    public ImagePlus DOG(ImagePlus img, double size1, double size2) {
+        ClearCLBuffer imgCL = clij2.push(img);
+        ClearCLBuffer imgCLDOG = clij2.create(imgCL);
+        clij2.differenceOfGaussian3D(imgCL, imgCLDOG, size1, size1, size1, size2, size2, size2);
+        clij2.release(imgCL);
+        ImagePlus imgDOG = clij2.pull(imgCLDOG);
+        clij2.release(imgCLDOG);
+        return(imgDOG);
+    }
+    
+    /**
+     * Threshold 
+     * USING CLIJ2
+     * @param img
+     * @param thMed
+     * @return 
+     */
+    public ImagePlus threshold(ImagePlus img, String thMed) {
+        ClearCLBuffer imgCL = clij2.push(img);
+        ClearCLBuffer imgCLBin = clij2.create(imgCL);
+        clij2.automaticThreshold(imgCL, imgCLBin, thMed);
+        clij2.release(imgCL);
+        ImagePlus imgBin = clij2.pull(imgCLBin);
+        clij2.release(imgCLBin);
+        return(imgBin);
+    }
+    
+    
+    /**
+     * Find microglia cells with DOG and threshold
+     */
+    public Objects3DIntPopulation microgliaCells(ImagePlus imgIn) {
+        ImagePlus imgDOG = DOG(imgIn, sigma1DOG, sigma2DOG);
+        ImagePlus imgBin = threshold(imgDOG, "Li");
+        closeImages(imgDOG);
+        ImagePlus imgClose = close_filter(imgBin, 2, 2);
+        closeImages(imgBin);
+        imgClose.setCalibration(cal);
+        ImageLabeller labeller = new ImageLabeller();
+        ImageInt labels = labeller.getLabels(ImageHandler.wrap(imgClose));
+        closeImages(imgClose);
+        Objects3DIntPopulation cellsPop = new Objects3DIntPopulation(labels);
+        labels.closeImagePlus();
+        System.out.println(cellsPop.getNbObjects()+" before size filtering");
+        popFilterSize(cellsPop, minMicro, maxMicro);
+        System.out.println(cellsPop.getNbObjects()+" after size filtering");
+        return(cellsPop);
+    }
+    
+    /**
+     * 
+     * @param imgIn
+     * @param model
+     * @param diameter
+     * @return
+     * @throws IOException 
+     */
      /*
      * Look for all 3D cells in a Z-stack: 
      * - apply CellPose in 2D slice by slice 
@@ -456,20 +507,24 @@ public class Tools {
        CellposeSegmentImgPlusAdvanced cellpose = new CellposeSegmentImgPlusAdvanced(settings, img);
        ImagePlus imgOut = cellpose.run();
        imgOut = imgOut.resize(imgIn.getWidth(), imgIn.getHeight(), "none");
-       imgOut.setCalibration(cal);
+       
        closeImages(img);
-       // remove small objects
+       ImagePlus imgLabels = new ImagePlus();
+       // remove small objects and connect objects
         if (model.equals(modelVessel))
-            IJ.run(imgOut, "Options...", "iterations=1 count=1 do=Erode stack");
-      
+           imgLabels = close_filter(imgOut, 6, 1);
+        else
+            imgLabels = new Duplicator().run(imgOut);
+        closeImages(imgOut);
+        imgLabels.setCalibration(cal);
         // Get objects population
-        Objects3DIntPopulation pop = getPopFromImage(imgOut);
+        Objects3DIntPopulation pop = getPopFromImage(imgLabels);
         System.out.println(pop.getNbObjects()+" before size filtering");
         if (model.equals(modelVessel))
             popFilterSize(pop, minVessels, maxVessels);
         else
             popFilterSize(pop, minMicro, maxMicro);
-        closeImages(imgOut);
+        closeImages(imgLabels);
         System.out.println(pop.getNbObjects()+" after size filtering");
         return(pop);
     }
@@ -498,13 +553,24 @@ public class Tools {
         
         ArrayList<Point> AllVoxels = skeletonResults.getListOfSlabVoxels();
         ArrayList<Point> JunctionVoxels = skeletonResults.getListOfJunctionVoxels();
+        ArrayList<Point> endVoxels = skeletonResults.getListOfEndPoints();
         AllVoxels.addAll(JunctionVoxels);
-        double MeanDiam = 0;
+        AllVoxels.addAll(endVoxels);
+        DescriptiveStatistics diameters = new DescriptiveStatistics();
         for (Point pt : AllVoxels) {
             vesselimgMap.setZ(pt.z);
-            MeanDiam += vesselimgMap.getProcessor().getPixelValue(pt.x, pt.y);
+            double diam = vesselimgMap.getProcessor().getPixelValue(pt.x, pt.y)*2;
+            if (diam > 0)
+                diameters.addValue(diam);
         }
-        params.put("meanDiameter", MeanDiam/AllVoxels.size());
+        double MeanDiam = diameters.getMean();
+        double StdDiam = diameters.getStandardDeviation();
+        double MinDiam = diameters.getMin();
+        double MaxDiam = diameters.getMax();
+        params.put("meanDiameter", MeanDiam);
+        params.put("stdDiameter", StdDiam);
+        params.put("minDiameter", MinDiam);
+        params.put("maxDiameter", MaxDiam);
         return(params);
     } 
     
@@ -568,6 +634,9 @@ public class Tools {
     public ImagePlus[] compute_param(Objects3DIntPopulation vesselsPop, Objects3DIntPopulation microPop, Roi roi,
             ImagePlus imgVessels, ImagePlus imgMicro, ImagePlus[] imgs, String rootName, String outDir,
             BufferedWriter outPutResults) throws IOException {
+        imgVessels.setRoi(roi);
+        double roiVol = (imgVessels.getStatistics().area) * (imgVessels.getNSlices()*cal.pixelDepth);
+        imgVessels.deleteRoi();
         // get vessels pop as one 3D Object in roi
         Object3DInt vesselInRoiObj = removeObjOutsideRoi(vesselsPop, imgVessels, roi);
         double vesselsVol = new MeasureVolume(vesselInRoiObj).getVolumeUnit();
@@ -596,11 +665,12 @@ public class Tools {
             double radius = vesselimgMap.getPixel(voxelBorder);
             double microColocVol = getColocVol(microObj, vesselInRoiObj);
             if (index == 0)
-                outPutResults.write(rootName+"\t"+roi.getName()+"\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius+"\t"+vesselsVol+"\t"+
-                    skelParams.get("totalLength")+"\t"+skelParams.get("meanLength")+"\t"+skelParams.get("lengthLongestBranch")+"\t"+
-                    skelParams.get("nbBranches")+"\t"+skelParams.get("nbJunctions")+"\t"+skelParams.get("nbEndpoints")+"\t"+skelParams.get("meanDiameter")+"\n");
+                outPutResults.write(rootName+"\t"+roi.getName()+"\t"+roiVol+"\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius+"\t"+vesselsVol+"\t"+
+                    skelParams.get("totalLength")+"\t"+skelParams.get("meanLength")+"\t"+skelParams.get("lengthLongestBranch")+"\t"+skelParams.get("nbBranches")+"\t"+
+                    skelParams.get("nbJunctions")+"\t"+skelParams.get("nbEndpoints")+"\t"+skelParams.get("meanDiameter")+"\t"+skelParams.get("stdDiameter")+"\t"+
+                    skelParams.get("minDiameter")+"\t"+skelParams.get("maxDiameter")+"\n");
             else
-                outPutResults.write("\t\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius+"\t\t\t\t\t\t\t\t\n");
+                outPutResults.write("\t\t\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius*2+"\t\t\t\t\t\t\t\t\t\t\t\n");
             outPutResults.flush();  
             index++;
         }
