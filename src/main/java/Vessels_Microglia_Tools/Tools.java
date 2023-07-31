@@ -73,9 +73,7 @@ public class Tools {
     public double cellposeStitchTh = 0.5;
     public final String modelVessel = cellposeModelsPath+"vessels";
     public int cellposeDiamVessel = 40;
-    public String cellsDetection = "DOG";
-    private final int sigma1DOG = 1;
-    private final int sigma2DOG = 3;
+    public String cellsDetection = "Threshold Otsu";
     
     private final CLIJ2 clij2 = CLIJ2.getInstance();
     
@@ -465,9 +463,9 @@ public class Tools {
      * Find microglia cells with DOG and threshold
      */
     public Objects3DIntPopulation microgliaCells(ImagePlus imgIn) {
-        ImagePlus imgDOG = DOG(imgIn, sigma1DOG, sigma2DOG);
-        ImagePlus imgBin = threshold(imgDOG, "Li");
-        closeImages(imgDOG);
+        ImagePlus imgMed = median3D_filter(imgIn, 1, 1);
+        ImagePlus imgBin = threshold(imgMed, "Otsu");
+        closeImages(imgMed);
         ImagePlus imgClose = close_filter(imgBin, 2, 2);
         closeImages(imgBin);
         imgClose.setCalibration(cal);
