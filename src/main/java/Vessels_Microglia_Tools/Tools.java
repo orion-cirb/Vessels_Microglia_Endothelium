@@ -326,7 +326,8 @@ public class Tools {
         ImageHandler imhVessels = (imgs[0] == null) ? ImageHandler.wrap(imgVessels).createSameDimensions() : ImageHandler.wrap(imgs[0]);
         ImageHandler imhMicro = (imgs[1] == null) ? imhVessels.createSameDimensions() : ImageHandler.wrap(imgs[1]);
         vesselsObj.drawObject(imhVessels, 255);
-        microPop.drawInImage(imhMicro);
+        if (microPop.getNbObjects() !=0)
+            microPop.drawInImage(imhMicro);
         ImagePlus[] imgObjects = {imhVessels.getImagePlus(), imhMicro.getImagePlus()};
         imhVessels.closeImagePlus();
         imhMicro.closeImagePlus();
@@ -391,15 +392,17 @@ public class Tools {
                 setCalibration(imgVessels);
                 IJ.saveAs(imgVessels, "Tiff", processDir+rootName+"-Vessels.tif");
                 closeImages(imgVessels);
-
-                // Open microglia channel
-                indexCh = ArrayUtils.indexOf(chsName, channels[1]);
-                options.setCBegin(0, indexCh);
-                options.setCEnd(0, indexCh);
-                ImagePlus imgMicro = BF.openImagePlus(options)[0];
-                setCalibration(imgMicro);
-                IJ.saveAs(imgMicro, "Tiff", processDir+rootName+"-Micro.tif");
-                closeImages(imgMicro);
+                
+                // Open microglia channel if channel exists
+                if (!channels[1].equals("None")) {
+                    indexCh = ArrayUtils.indexOf(chsName, channels[1]);
+                    options.setCBegin(0, indexCh);
+                    options.setCEnd(0, indexCh);
+                    ImagePlus imgMicro = BF.openImagePlus(options)[0];
+                    setCalibration(imgMicro);
+                    IJ.saveAs(imgMicro, "Tiff", processDir+rootName+"-Micro.tif");
+                    closeImages(imgMicro);
+                }
             }
         }
         catch (Exception e) { throw e; }
@@ -623,8 +626,9 @@ public class Tools {
      * @param roi
      * @param imgVessels
      * @param imgMicro
+     * @param imgs
      * @param rootName
-     * @param roiName
+     * @param outDir
      * @param outPutResults
      * @return 
      * @throws java.io.IOException 
@@ -652,25 +656,35 @@ public class Tools {
         IJ.run(vesselsSkelImg, "8-bit","");
         HashMap skelParams = skeletonParameters(vesselsSkelImg, vesselimgMap.getImagePlus());
         // get microglia pop in roi
-        Objects3DIntPopulation microRoiPop = removePopOutsideRoi(microPop, imgMicro, roi);  
-        int index = 0;
-        for (Object3DInt microObj : microRoiPop.getObjects3DInt()) {
-            double microVol = new MeasureVolume(microObj).getVolumeUnit();
-            Point3D pt = new MeasureCentroid​(microObj).getCentroidAsPoint();
-            double CenterDist = vesselimgMapInv.getPixel(pt);
-            double BorderDist = new Measure2Distance(microObj, vesselInRoiObj).getValue(Measure2Distance.DIST_BB_UNIT);
-            VoxelInt voxelBorder = new Measure2Distance(microObj, vesselsSkelObj).getBorder2Pix();
-            double radius = vesselimgMap.getPixel(voxelBorder);
-            double microColocVol = getColocVol(microObj, vesselInRoiObj);
-            if (index == 0)
-                outPutResults.write(rootName+"\t"+roi.getName()+"\t"+roiVol+"\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius+"\t"+vesselsVol+"\t"+
-                    skelParams.get("totalLength")+"\t"+skelParams.get("meanLength")+"\t"+skelParams.get("lengthLongestBranch")+"\t"+skelParams.get("nbBranches")+"\t"+
-                    skelParams.get("nbJunctions")+"\t"+skelParams.get("nbEndpoints")+"\t"+skelParams.get("meanDiameter")+"\t"+skelParams.get("stdDiameter")+"\t"+
-                    skelParams.get("minDiameter")+"\t"+skelParams.get("maxDiameter")+"\n");
-            else
-                outPutResults.write("\t\t\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius*2+"\t\t\t\t\t\t\t\t\t\t\t\n");
-            outPutResults.flush();  
-            index++;
+        Objects3DIntPopulation microRoiPop = new Objects3DIntPopulation();
+        if (imgMicro != null) {
+            microRoiPop = removePopOutsideRoi(microPop, imgMicro, roi);  
+            int index = 0;
+            for (Object3DInt microObj : microRoiPop.getObjects3DInt()) {
+                double microVol = new MeasureVolume(microObj).getVolumeUnit();
+                Point3D pt = new MeasureCentroid​(microObj).getCentroidAsPoint();
+                double CenterDist = vesselimgMapInv.getPixel(pt);
+                double BorderDist = new Measure2Distance(microObj, vesselInRoiObj).getValue(Measure2Distance.DIST_BB_UNIT);
+                VoxelInt voxelBorder = new Measure2Distance(microObj, vesselsSkelObj).getBorder2Pix();
+                double radius = vesselimgMap.getPixel(voxelBorder);
+                double microColocVol = getColocVol(microObj, vesselInRoiObj);
+                if (index == 0)
+                    outPutResults.write(rootName+"\t"+roi.getName()+"\t"+roiVol+"\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius+"\t"+vesselsVol+"\t"+
+                        skelParams.get("totalLength")+"\t"+skelParams.get("meanLength")+"\t"+skelParams.get("lengthLongestBranch")+"\t"+skelParams.get("nbBranches")+"\t"+
+                        skelParams.get("nbJunctions")+"\t"+skelParams.get("nbEndpoints")+"\t"+skelParams.get("meanDiameter")+"\t"+skelParams.get("stdDiameter")+"\t"+
+                        skelParams.get("minDiameter")+"\t"+skelParams.get("maxDiameter")+"\n");
+                else
+                    outPutResults.write("\t\t\t"+microObj.getLabel()+"\t"+microVol+"\t"+microColocVol+"\t"+CenterDist+"\t"+BorderDist+"\t"+radius*2+"\t\t\t\t\t\t\t\t\t\t\t\n");
+                outPutResults.flush();  
+                index++;
+            }
+        }
+        else {
+            outPutResults.write(rootName+"\t"+roi.getName()+"\t"+roiVol+"\tNA\tNA\tNA\tNA\tNA\tNA\t"+vesselsVol+"\t"+
+                        skelParams.get("totalLength")+"\t"+skelParams.get("meanLength")+"\t"+skelParams.get("lengthLongestBranch")+"\t"+skelParams.get("nbBranches")+"\t"+
+                        skelParams.get("nbJunctions")+"\t"+skelParams.get("nbEndpoints")+"\t"+skelParams.get("meanDiameter")+"\t"+skelParams.get("stdDiameter")+"\t"+
+                        skelParams.get("minDiameter")+"\t"+skelParams.get("maxDiameter")+"\n");
+               outPutResults.flush();  
         }
         vesselimgMap.closeImagePlus();
         vesselimgMapInv.closeImagePlus();

@@ -111,8 +111,8 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 QuantileBasedNormalization qbn = new QuantileBasedNormalization();
                 // vessels normalization
                 qbn.run(processDir, imageFiles, "-Vessels");
-                // microglia
-                if (tools.cellsDetection.equals("CellPose"))
+                // microglia if channel exists
+                if (tools.cellsDetection.equals("CellPose") && !channels[1].equals("None"))
                     qbn.run(processDir, imageFiles, "-Micro");
                 IJ.showStatus("Normalisation done");
             }
@@ -134,17 +134,23 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                     roiFileName = imageDir+rootName+".roi";
                 reader.setId(fileName);
                 ImagePlus imgVessels = IJ.openImage(fileName);
-                fileName = (tools.cellsDetection.equals("CellPose")) ? processDir+rootName+"-Micro-normalized.tif" : processDir+rootName+"-Micro.tif"; 
-                ImagePlus imgMicro = IJ.openImage(fileName);
+                ImagePlus imgMicro = null;
+                if (!channels[1].equals("None")) {
+                    fileName = (tools.cellsDetection.equals("CellPose")) ? processDir+rootName+"-Micro-normalized.tif" : processDir+rootName+"-Micro.tif"; 
+                    imgMicro = IJ.openImage(fileName);
+                }
                 
                 //do vessel segmentation
                 System.out.println("Vessels segmentation starting image " + rootName +" ...");
                 Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, tools.modelVessel, 40);
                 
                 //do microglia segmentation
-                System.out.println("Microglia segmentation starting image " + rootName + " ...");
-                Objects3DIntPopulation microPop = (tools.cellsDetection.equals("CellPose")) ? tools.cellposeDetection(imgMicro, tools.modelMicro, 30) :
+                Objects3DIntPopulation microPop = new Objects3DIntPopulation();
+                if (imgMicro != null) {
+                    System.out.println("Microglia segmentation starting image " + rootName + " ...");
+                    microPop = (tools.cellsDetection.equals("CellPose")) ? tools.cellposeDetection(imgMicro, tools.modelMicro, 30) :
                         tools.microgliaCells(imgMicro);
+                }
                
                 // Load Roi
                 List<Roi> rois = new ArrayList();
@@ -165,13 +171,15 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                     System.out.println("computing parameters ...");
                     imgs = tools.compute_param(vesselPop, microPop, roi, imgVessels, imgMicro, imgs, rootName, outDirResults, outPutResults);
                 } 
+                
                 ImagePlus[] imgColors = {imgs[0], imgs[1], null, imgVessels, imgMicro};
                 ImagePlus imgObjects = new RGBStackMerge().mergeHyperstacks(imgColors, true);
                 imgObjects.setCalibration(tools.cal);
                 FileSaver imgObjectsFile = new FileSaver(imgObjects);
                 imgObjectsFile.saveAsTiff(outDirResults+rootName+"_cells.tif"); 
                 tools.closeImages(imgVessels);
-                tools.closeImages(imgMicro);
+                if (imgMicro != null) 
+                        tools.closeImages(imgMicro);
             }
 
             outPutResults.close();
