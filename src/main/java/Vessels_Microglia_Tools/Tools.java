@@ -9,6 +9,7 @@ import ij.ImagePlus;
 import ij.gui.Roi;
 import ij.measure.Calibration;
 import ij.plugin.Duplicator;
+import ij.plugin.ImageCalculator;
 import ij.util.ThreadUtil;
 import java.awt.Color;
 import java.awt.Font;
@@ -71,7 +72,7 @@ public class Tools {
     public final String modelMicro = "cyto2";
     public int cellposeDiamMicro = 30;
     public double cellposeStitchTh = 0.5;
-    public final String modelVessel = cellposeModelsPath+"vessels";
+    public String modelVessel = "";
     public int cellposeDiamVessel = 40;
     public String cellsDetection = "Threshold Otsu";
     
@@ -153,14 +154,28 @@ public class Tools {
         return(images);
     }
     
-        
+      /**
+     * Find vessels cellpose models in cellpose path
+     * @return 
+     */
+    public ArrayList<String> findCellPoseModel() {
+        ArrayList<String> models = new ArrayList();
+        File inDir = new File(cellposeModelsPath);
+        String[] files = inDir.list();
+        for (String f : files) {
+            if (f.contains("vessel")) 
+                models.add(f);
+        }
+        return (models);
+    }   
     
     /**
      * Dialog
      */
     public String[] dialog(String imagesDir, String[] channels) {
-        String[] chNames = {"Vessels : ", "Microglia : "};
+        String[] chNames = {"Vessels(1) : ", "Vessels(2) : ", "Microglia : "};
         String[] cellDetection = {"DOG", "CellPose"};
+        String[] models = findCellPoseModel().toArray(new String[0]);
         GenericDialogPlus gd = new GenericDialogPlus("Parameters");
         gd.setInsets​(0, 15, 0);
         gd.addImage(icon);
@@ -168,6 +183,8 @@ public class Tools {
         for (int n = 0; n < chNames.length; n++) {
             gd.addChoice(chNames[n], channels, channels[n]);
         }
+        gd.addMessage("Vessels detection model", Font.getFont("Monospace"), Color.blue);
+        gd.addChoice("Model : ", models, models[0]);
         gd.addMessage("Microglial cells detection method", Font.getFont("Monospace"), Color.blue);
         gd.addChoice("Detection : ", cellDetection, cellsDetection);
         gd.addMessage("Size filter", Font.getFont("Monospace"), Color.blue);
@@ -182,6 +199,7 @@ public class Tools {
             chChoices[n] = gd.getNextChoice();
         if (gd.wasCanceled())
                 chChoices = null;
+        modelVessel = gd.getNextChoice();
         cellsDetection = gd.getNextChoice();
         minVessels = gd.getNextNumber();
         minMicro = gd.getNextNumber();
@@ -388,8 +406,21 @@ public class Tools {
                 // Open vessel channel
                 options.setCBegin(0, indexCh);
                 options.setCEnd(0, indexCh);
-                ImagePlus imgVessels = BF.openImagePlus(options)[0];
-                setCalibration(imgVessels);
+                ImagePlus imgVessels1 = BF.openImagePlus(options)[0];
+                setCalibration(imgVessels1);
+                ImagePlus imgVessels2 = null;
+                // add channels if 2 vessels channel
+                if (!channels[1].equals("None")) {
+                    indexCh = ArrayUtils.indexOf(chsName, channels[1]);
+                    // Open second vessel channel
+                    options.setCBegin(0, indexCh);
+                    options.setCEnd(0, indexCh);
+                    imgVessels2 = BF.openImagePlus(options)[0];
+                }
+                ImagePlus imgVessels =  (imgVessels2 == null) ? new Duplicator().run(imgVessels1) : new ImageCalculator().run("add stack create", imgVessels1, imgVessels2);
+                closeImages(imgVessels1);
+                if (imgVessels2 != null)
+                    closeImages(imgVessels2);
                 IJ.saveAs(imgVessels, "Tiff", processDir+rootName+"-Vessels.tif");
                 closeImages(imgVessels);
                 

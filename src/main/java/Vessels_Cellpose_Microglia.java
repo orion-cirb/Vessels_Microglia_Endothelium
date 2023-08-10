@@ -142,7 +142,7 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 
                 //do vessel segmentation
                 System.out.println("Vessels segmentation starting image " + rootName +" ...");
-                Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, tools.modelVessel, 40);
+                Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, tools.modelVessel, 35);
                 
                 //do microglia segmentation
                 Objects3DIntPopulation microPop = new Objects3DIntPopulation();
