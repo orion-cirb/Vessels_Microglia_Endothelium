@@ -86,7 +86,7 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             // Create output folder
             DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
             Date date = new Date();
-            String outDirResults = imageDir + File.separator+ "Results_" + dateFormat.format(date) +  File.separator;
+            String outDirResults = imageDir + File.separator+ "Results_" + tools.modelVessel+"_"+dateFormat.format(date) +  File.separator;
             File outDir = new File(outDirResults);
             if (!Files.exists(Paths.get(outDirResults))) {
                 outDir.mkdir();
@@ -176,7 +176,8 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 ImagePlus imgObjects = new RGBStackMerge().mergeHyperstacks(imgColors, true);
                 imgObjects.setCalibration(tools.cal);
                 FileSaver imgObjectsFile = new FileSaver(imgObjects);
-                imgObjectsFile.saveAsTiff(outDirResults+rootName+"_cells.tif"); 
+                imgObjectsFile.saveAsTiff(outDirResults+rootName+"_cells.tif");
+                tools.closeImages(imgObjects);
                 tools.closeImages(imgVessels);
                 if (imgMicro != null) 
                         tools.closeImages(imgMicro);
