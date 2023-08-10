@@ -112,7 +112,7 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 // vessels normalization
                 qbn.run(processDir, imageFiles, "-Vessels");
                 // microglia if channel exists
-                if (tools.cellsDetection.equals("CellPose") && !channels[1].equals("None"))
+                if (tools.cellsDetection.equals("CellPose") && !channels[2].equals("None"))
                     qbn.run(processDir, imageFiles, "-Micro");
                 IJ.showStatus("Normalisation done");
             }

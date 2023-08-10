@@ -427,8 +427,8 @@ public class Tools {
                 closeImages(imgVessels);
                 
                 // Open microglia channel if channel exists
-                if (!channels[1].equals("None")) {
-                    indexCh = ArrayUtils.indexOf(chsName, channels[1]);
+                if (!channels[2].equals("None")) {
+                    indexCh = ArrayUtils.indexOf(chsName, channels[2]);
                     options.setCBegin(0, indexCh);
                     options.setCEnd(0, indexCh);
                     ImagePlus imgMicro = BF.openImagePlus(options)[0];
