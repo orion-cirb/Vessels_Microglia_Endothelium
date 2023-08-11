@@ -135,7 +135,7 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 reader.setId(fileName);
                 ImagePlus imgVessels = IJ.openImage(fileName);
                 ImagePlus imgMicro = null;
-                if (!channels[1].equals("None")) {
+                if (!channels[2].equals("None")) {
                     fileName = (tools.cellsDetection.equals("CellPose")) ? processDir+rootName+"-Micro-normalized.tif" : processDir+rootName+"-Micro.tif"; 
                     imgMicro = IJ.openImage(fileName);
                 }
