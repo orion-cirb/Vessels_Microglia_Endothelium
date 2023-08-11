@@ -345,7 +345,7 @@ public class Tools {
     public ImagePlus[] createImageObjects(Object3DInt vesselsObj, Objects3DIntPopulation microPop, ImagePlus[] imgs, ImagePlus imgVessels) {
         ImageHandler imhVessels = (imgs[0] == null) ? ImageHandler.wrap(imgVessels).createSameDimensions() : ImageHandler.wrap(imgs[0]);
         ImageHandler imhMicro = (imgs[1] == null) ? imhVessels.createSameDimensions() : ImageHandler.wrap(imgs[1]);
-        vesselsObj.drawObject(imhVessels, 255);
+        vesselsObj.drawObject(imhVessels, 128);
         if (microPop.getNbObjects() !=0)
             microPop.drawInImage(imhMicro);
         ImagePlus[] imgObjects = {imhVessels.getImagePlus(), imhMicro.getImagePlus()};

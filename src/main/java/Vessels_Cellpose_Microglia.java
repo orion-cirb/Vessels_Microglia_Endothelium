@@ -9,6 +9,7 @@ import Vessels_Microglia_Tools.QuantileBasedNormalization;
 import Vessels_Microglia_Tools.Tools;
 import ij.*;
 import ij.gui.Roi;
+import ij.gui.WaitForUserDialog;
 import ij.io.FileSaver;
 import ij.plugin.PlugIn;
 import ij.plugin.RGBStackMerge;
@@ -171,7 +172,11 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                     System.out.println("computing parameters ...");
                     imgs = tools.compute_param(vesselPop, microPop, roi, imgVessels, imgMicro, imgs, rootName, outDirResults, outPutResults);
                 } 
-                
+                IJ.run(imgs[0], "Red", "");
+                IJ.run(imgs[1], "Green", "");
+                imgs[0].show();
+                imgs[1].show();
+                new WaitForUserDialog(f).show();
                 ImagePlus[] imgColors = {imgs[0], imgs[1], null, imgVessels, imgMicro};
                 ImagePlus imgObjects = new RGBStackMerge().mergeHyperstacks(imgColors, true);
                 imgObjects.setCalibration(tools.cal);
