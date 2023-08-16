@@ -174,9 +174,6 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 } 
                 IJ.run(imgs[0], "Red", "");
                 IJ.run(imgs[1], "Green", "");
-                imgs[0].show();
-                imgs[1].show();
-                new WaitForUserDialog(f).show();
                 ImagePlus[] imgColors = {imgs[0], imgs[1], null, imgVessels, imgMicro};
                 ImagePlus imgObjects = new RGBStackMerge().mergeHyperstacks(imgColors, true);
                 imgObjects.setCalibration(tools.cal);
