@@ -7,12 +7,10 @@ import fiji.util.gui.GenericDialogPlus;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.Roi;
-import ij.gui.WaitForUserDialog;
 import ij.measure.Calibration;
 import ij.plugin.Duplicator;
 import ij.plugin.ImageCalculator;
 import ij.util.ThreadUtil;
-import ij3d.behaviors.WaitForNextFrameBehavior;
 import java.awt.Color;
 import java.awt.Font;
 import java.io.BufferedWriter;
@@ -186,7 +184,7 @@ public class Tools {
             gd.addChoice(chNames[n], channels, channels[n]);
         }
         gd.addMessage("Vessels detection model", Font.getFont("Monospace"), Color.blue);
-        gd.addChoice("Model : ", models, models[0]);
+        gd.addChoice("Model : ", models, models[1]);
         gd.addMessage("Microglial cells detection method", Font.getFont("Monospace"), Color.blue);
         gd.addChoice("Detection : ", cellDetection, cellsDetection);
         gd.addMessage("Size filter", Font.getFont("Monospace"), Color.blue);
