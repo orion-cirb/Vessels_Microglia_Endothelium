@@ -22,13 +22,13 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 * Detect vessels with Quantile Based Normalization + Cellpose + closing + median filtering
 * If microglia channel provided, detect cells with Quantile Based Normalization + Cellpose or median filtering + Otsu thresholding + closing
 * Compute distance and volume of contact between each microglial cell and its nearest vessel
-* Compute vessels volume, length, diameter and number of branches, junctions, endpoints, etc...
+* Compute vessels volume, length, diameter and number of branches, junctions, endpoints, etc
 
 ### Dependencies
 
 * **3DImageSuite** Fiji plugin
 * **CLIJ2** Fiji plugin
-* **Cellpose** conda environment + *vessels*/*vessels2* and *cyto2* models 
+* **Cellpose** conda environment + *vessels* or *vessels2* and *cyto2* models 
 
 ### Version history
 
