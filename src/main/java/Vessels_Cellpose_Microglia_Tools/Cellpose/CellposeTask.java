@@ -1,6 +1,6 @@
-package Vessels_Microglia_Tools.Cellpose;
+package Vessels_Cellpose_Microglia_Tools.Cellpose;
 
-import Vessels_Microglia_Tools.Cellpose.CellposeTaskSettings;
+import Vessels_Cellpose_Microglia_Tools.Cellpose.CellposeTaskSettings;
 import java.util.ArrayList;
 
 public class CellposeTask {

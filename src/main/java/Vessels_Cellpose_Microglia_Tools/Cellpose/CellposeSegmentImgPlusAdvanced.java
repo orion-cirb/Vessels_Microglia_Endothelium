@@ -1,7 +1,7 @@
-package Vessels_Microglia_Tools.Cellpose;
+package Vessels_Cellpose_Microglia_Tools.Cellpose;
 
-import Vessels_Microglia_Tools.Cellpose.CellposeTaskSettings;
-import Vessels_Microglia_Tools.Cellpose.CellposeTask;
+import Vessels_Cellpose_Microglia_Tools.Cellpose.CellposeTaskSettings;
+import Vessels_Cellpose_Microglia_Tools.Cellpose.CellposeTask;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;

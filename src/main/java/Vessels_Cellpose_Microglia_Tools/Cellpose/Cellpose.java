@@ -1,4 +1,4 @@
-package Vessels_Microglia_Tools.Cellpose;
+package Vessels_Cellpose_Microglia_Tools.Cellpose;
 
 import java.io.File;
 import java.io.IOException;
@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 import static java.io.File.separatorChar;
 
 import ij.IJ;
-import Vessels_Microglia_Tools.Cellpose.CellposeTaskSettings;
+import Vessels_Cellpose_Microglia_Tools.Cellpose.CellposeTaskSettings;
 
 
 public class Cellpose {

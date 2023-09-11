@@ -1,4 +1,4 @@
-package Vessels_Microglia_Tools;
+package Vessels_Cellpose_Microglia_Tools;
 
    /* -*- mode: java; c-basic-offset: 8; indent-tabs-mode: t; tab-width: 8 -*- */
 
