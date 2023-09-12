@@ -29,8 +29,8 @@
                 <timezone>-1</timezone>
             </developer>
               <developer>
-                <id>heloise</id>
-                <name>Heloïse Monnet</name>
+                <id>hm</id>
+                <name>Héloïse Monnet</name>
                 <email>heloise.monnet@college-de-france.fr</email>
                 <url></url>
                 <organization>CIRB, Collège de France</organization>
