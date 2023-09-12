@@ -516,7 +516,8 @@ public class Tools {
         
         ImageHandler imhVessels = ImageHandler.wrap(imgVessels).createSameDimensions();
         ImageHandler imhMicro = imhVessels.createSameDimensions();
-    
+        int microLabel = 1;
+        
         for (Roi roi : rois) {
             print("- Computing parameters and saving results for ROI " + roi.getName() + " -");
             
@@ -558,6 +559,9 @@ public class Tools {
                 // Compute microglia parameters
                 int nbVAM=0, nbVTM=0, nbVDM = 0;
                 for (Object3DInt micro: microPopInRoi.getObjects3DInt()) {
+                    micro.setLabel(microLabel);
+                    microLabel++;
+                    
                     double microVol = new MeasureVolume(micro).getVolumeUnit();
                     double centroidDist = vesselsDistMapInv.getPixel(new MeasureCentroid​(micro).getCentroidAsPoint());
                     double borderDist = new Measure2Distance(micro, vesselsObj).getValue(Measure2Distance.DIST_BB_UNIT);
@@ -696,17 +700,16 @@ public class Tools {
      * Clear objects outside ROI and return remaining population as one object 
      */
      private Objects3DIntPopulation getPopInsideRoi(Objects3DIntPopulation pop, ImagePlus img, Roi roi) {
-        ImageHandler imhVessels = ImageHandler.wrap(img).createSameDimensions();
-        pop.drawInImage(imhVessels);
+        ImageHandler imh = ImageHandler.wrap(img).createSameDimensions();
+        pop.drawInImage(imh);
         
-        ImagePlus imgMask = imhVessels.getImagePlus();
+        ImagePlus imgMask = imh.getImagePlus();
         imgMask.setRoi(roi);
         IJ.run(imgMask, "Clear Outside", "stack");
         imgMask.deleteRoi();
         imgMask.setCalibration(cal);
         
-        Objects3DIntPopulation microPop = getPopFromImage(imgMask); 
-        microPop.resetLabels();
+        Objects3DIntPopulation microPop = new Objects3DIntPopulation(ImageHandler.wrap(imgMask));
         return(microPop);
     }
      
