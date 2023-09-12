@@ -586,7 +586,7 @@ public class Tools {
             // Draw results
             System.out.println("Drawing results...");
             vesselsObj.drawObject(imhVessels, 128);
-            if (microPopInRoi.getNbObjects() !=0)
+            if (microPopInRoi.getNbObjects() != 0)
                 microPopInRoi.drawInImage(imhMicro);
             
             closeImage(imgVesselsMask);
@@ -724,7 +724,12 @@ public class Tools {
     private void drawResults(ImageHandler imhVessels, ImageHandler imhMicro, ImagePlus imgVessels, ImagePlus imgMicro, String rootName, String outDir)  {
         IJ.run(imhVessels.getImagePlus(), "Red", "");
         IJ.run(imhMicro.getImagePlus(), "Green", "");
-        ImagePlus[] imgColors = {imhVessels.getImagePlus(), imhMicro.getImagePlus(), null, imgVessels, imgMicro};
+        
+        ImagePlus[] imgColors = {imhVessels.getImagePlus(), null, null, imgVessels, null};
+        if (imgMicro != null) {
+            imgColors[1] = imhMicro.getImagePlus();
+            imgColors[4] = imgMicro;
+        }
         ImagePlus imgObjects = new RGBStackMerge().mergeHyperstacks(imgColors, true);
         imgObjects.setCalibration(cal);
         FileSaver imgObjectsFile = new FileSaver(imgObjects);

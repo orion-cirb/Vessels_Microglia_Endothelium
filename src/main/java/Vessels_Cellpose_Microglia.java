@@ -109,7 +109,7 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 QuantileBasedNormalization qbn = new QuantileBasedNormalization();
                 qbn.run(processDir, imageFiles, "-Vessels");
                 // Normalize microglia (if channel exists)
-                if (!channels[2].equals("None") && tools.microMethod.equals("Cellpose"))
+                if (!channels[2].equals("None"))
                     qbn.run(processDir, imageFiles, "-Micro");
                 tools.print("Normalisation done");
             }
@@ -140,9 +140,10 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                     rm.runCommand("Open", roiName);
                     rois = Arrays.asList(rm.getRoisAsArray());
                 } else {
-                    Roi roi = new Roi(0, 0, imgVessels.getWidth() - 1 , imgVessels.getHeight() - 1);
+                    Roi roi = new Roi(0, 0, imgVessels.getWidth() , imgVessels.getHeight());
                     roi.setName("whole image");
                     rois.add(roi);
+                    System.out.println("No ROI file found, entire image is analyzed");
                 }
                 
                 // Segment vessels with Cellpose
