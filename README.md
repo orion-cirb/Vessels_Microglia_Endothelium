@@ -32,4 +32,4 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 
 ### Version history
 
-Version 1 released on September 11, 2023.
+Version 1 released on September 12, 2023.
