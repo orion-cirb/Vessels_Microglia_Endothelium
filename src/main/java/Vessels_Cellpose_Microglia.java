@@ -76,7 +76,8 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             }
             
             // Create output folder for results files and images
-            String outDir = imageDir + File.separator + "Results_" + tools.cellposeModelVessel + "_" + 
+            String microMethodName = (channels[2].equals("None")) ? "" : tools.microMethod + "_";
+            String outDir = imageDir + File.separator + "Results_" + tools.cellposeModelVessel + "_" + microMethodName +
                     new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()) + File.separator;
             if (!Files.exists(Paths.get(outDir))) {
                 new File(outDir).mkdir();

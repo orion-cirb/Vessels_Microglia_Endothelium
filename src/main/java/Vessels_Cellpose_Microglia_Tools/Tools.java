@@ -75,7 +75,7 @@ public class Tools {
     public int cellposeDiamVessel = 35;
     public final String cellposeModelMicro = "cyto2";
     public int cellposeDiamMicro = 30;
-    public String[] microDetectionMethods = {"Otsu threshold", "Cellpose"};
+    public String[] microDetectionMethods = {"Threshold", "Cellpose"};
     public String microMethod;
     
     // Vessels and cells size filtering
@@ -247,7 +247,7 @@ public class Tools {
      */
     public String[] dialog(String imagesDir, String[] channels) {
         GenericDialogPlus gd = new GenericDialogPlus("Parameters");
-        gd.setInsets​(0, 80, 0);
+        gd.setInsets​(0, 60, 0);
         gd.addImage(icon);
       
         gd.addMessage("Channels", Font.getFont("Monospace"), Color.blue);
