@@ -2,8 +2,8 @@ import Vessels_Cellpose_Microglia_Tools.QuantileBasedNormalization;
 import Vessels_Cellpose_Microglia_Tools.Tools;
 import ij.*;
 import ij.gui.Roi;
+import ij.measure.Calibration;
 import ij.plugin.PlugIn;
-import ij.plugin.frame.RoiManager;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -14,15 +14,17 @@ import java.text.SimpleDateFormat;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import loci.common.services.ServiceFactory;
 import loci.formats.meta.IMetadata;
 import loci.formats.services.OMEXMLService;
+import loci.plugins.BF;
+import loci.plugins.in.ImporterOptions;
 import loci.plugins.util.ImageProcessorReader;
 import mcib3d.geom2.Objects3DIntPopulation;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang.ArrayUtils;
 
 /**
  * Detect vessels and microglial cells with Cellpose
@@ -45,25 +47,19 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 return;
             }
             
-            // Find images with fileExt extension
-            String fileExt = tools.findImageType(new File(imageDir));
-            ArrayList<String> imageFiles = tools.findImages(imageDir, fileExt);
+            // Find images with tif extension
+            ArrayList<String> imageFiles = tools.findImages(imageDir, "tif");
             if (imageFiles.isEmpty()) {
-                IJ.showMessage("Error", "No images found with " + fileExt + " extension");
+                IJ.showMessage("Error", "No images found with tif extension");
                 return;
             }
             
             // Create OME-XML metadata store of the latest schema version
-            ServiceFactory factory;
-            factory = new ServiceFactory();
+            ServiceFactory factory = new ServiceFactory();
             OMEXMLService service = factory.getInstance(OMEXMLService.class);
             IMetadata meta = service.createOMEXMLMetadata();
             ImageProcessorReader reader = new ImageProcessorReader();
             reader.setMetadataStore(meta);
-            reader.setId(imageFiles.get(0));
-            
-            // Find image calibration
-            tools.findImageCalib(meta);
             
             // Find channel names
             String[] channelNames = tools.findChannels(imageFiles.get(0), meta, reader);
@@ -76,7 +72,7 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             }
             
             // Create output folder for results files and images
-            String microMethodName = (channels[2].equals("None")) ? "" : tools.microMethod + "_";
+            String microMethodName = (channels[1].equals("None")) ? "" : tools.microThMethod + "_";
             String outDir = imageDir + File.separator + "Results_" + tools.cellposeModelVessel + "_" + microMethodName +
                     new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()) + File.separator;
             if (!Files.exists(Paths.get(outDir))) {
@@ -86,32 +82,29 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             // Write headers in results files
             FileWriter fwMicroResults = new FileWriter(outDir + "microgliaResults.csv", false);
             BufferedWriter microResults = new BufferedWriter(fwMicroResults);
-            microResults.write("Image name\tRoi name\tCell ID\tCell volume (µm3)\tCell volume coloc with vessel (µm3)"
+            microResults.write("Image name\tROI name\tCell ID\tCell volume (µm3)\tCell volume coloc with vessel (µm3)"
                     + "\tCell centroid distance to closest vessel (µm)\tCell border distance to closest vessel (µm)"
                     + "\tClosest vessel diameter (µm)\n");
             microResults.flush();
             FileWriter fwGlobalResults = new FileWriter(outDir + "globalResults.csv", false);
             BufferedWriter globalResults = new BufferedWriter(fwGlobalResults);
-            globalResults.write("Image name\tRoi name\tRoi volume (µm3)\tVessels total volume (µm3)\tVessels density\tVessels total length (µm)"
+            globalResults.write("Image name\tImage XY calibration (µm)\tROI name\tROI translation\tROI volume (µm3)\tVessels total volume (µm3)\tVessels density\tVessels total length (µm)"
                     + "\tVessels mean length (µm)\tLongest branch length (µm)\tNb branches\tNb junctions\tNb endpoints"
                     + "\tVessels mean diameter (µm)\tVessels std diameter (µm)\tVessels min diameter (µm)\tVessels max diameter (µm)"
                     + "\tNb cells\tNb VAM\tNb VTM\tNb VDM\n");
             globalResults.flush();
             
-            // Create output folder for preprocessed images
+            // Preprocess vessels channel
             String processDir = imageDir + File.separator + "Preprocessed" + File.separator;
             if (!Files.exists(Paths.get(processDir))) {
-                new File(processDir).mkdir();
-                
-                // Preprocess images
                 tools.print("--- NORMALIZING IMAGES ---");
-                tools.preprocessFiles(imageFiles, processDir, channelNames, channels);
-                // Normalize vessels
+                // Create output folder for preprocessed files
+                new File(processDir).mkdir();
+                // Save vessels channel
+                tools.preprocessFiles(reader, imageFiles, processDir, channelNames, channels);
+                // Normalize vessels channel
                 QuantileBasedNormalization qbn = new QuantileBasedNormalization();
                 qbn.run(processDir, imageFiles, "-Vessels");
-                // Normalize microglia (if channel exists)
-                if (!channels[2].equals("None"))
-                    qbn.run(processDir, imageFiles, "-Micro");
                 tools.print("Normalisation done");
             }
             
@@ -121,46 +114,43 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             for (String f : imageFiles) {
                 String rootName = FilenameUtils.getBaseName(f);
                 tools.print("--- ANALYZING IMAGE " + rootName + " ---");
+                reader.setId(f);
                 
+                // Find image calibration
+                Calibration cal = tools.findImageCalib(meta);
+                                
                 // Read vessels and microglia channels
-                tools.print("- Reading channels -");
+                tools.print("- Opening channels -");
                 ImagePlus imgVessels = IJ.openImage(processDir + rootName + "-Vessels-normalized.tif");
                 ImagePlus imgMicro = null;
-                if (!channels[2].equals("None")) {
-                    String fileName = (tools.microMethod.equals("Cellpose")) ? processDir+rootName+"-Micro-normalized.tif" : processDir+rootName+"-Micro.tif"; 
-                    imgMicro = IJ.openImage(fileName);
+                if (!channels[1].equals("None")) {
+                    ImporterOptions options = new ImporterOptions();
+                    options.setId(f);
+                    options.setSplitChannels(true);
+                    options.setColorMode(ImporterOptions.COLOR_MODE_GRAYSCALE);
+                    options.setQuiet(true);
+                    
+                    int indexCh = ArrayUtils.indexOf(channelNames, channels[1]);
+                    imgMicro = BF.openImagePlus(options)[indexCh];
                 }
                 
                 // Load ROIs (if provided)
                 tools.print("- Loading ROIs -");
-                List<Roi> rois = new ArrayList();
-                String roiName = imageDir + File.separator + rootName; 
-                roiName = new File(roiName + ".zip").exists() ? roiName + ".zip" : roiName + ".roi";
-                if (new File(roiName).exists()) {
-                    RoiManager rm = new RoiManager(false);
-                    rm.runCommand("Open", roiName);
-                    rois = Arrays.asList(rm.getRoisAsArray());
-                } else {
-                    Roi roi = new Roi(0, 0, imgVessels.getWidth() , imgVessels.getHeight());
-                    roi.setName("whole image");
-                    rois.add(roi);
-                    System.out.println("No ROI file found, entire image is analyzed");
-                }
+                List<Roi> rois = tools.loadRois(imageDir + File.separator + rootName, imgVessels, rootName);
                 
-                // Segment vessels with Cellpose
-                tools.print("- Segmenting vessels -");
-                Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, tools.cellposeModelsPath+tools.cellposeModelVessel, tools.cellposeDiamVessel, tools.minVesselVol, tools.maxVesselVol);
+                // Detect vessels
+                tools.print("- Detecting vessels -");
+                Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, tools.cellposeModelsPath+tools.cellposeModelVessel, tools.cellposeDiamVessel, tools.minVesselVol, tools.maxVesselVol, cal);
                 
-                // Segment microglia with Cellpose or Otsu thresholding
+                // Segment microglia
                 Objects3DIntPopulation microPop = new Objects3DIntPopulation();
                 if (imgMicro != null) {
-                    tools.print("- Segmenting microglial cells -");
-                    microPop = (tools.microMethod.equals("Cellpose")) ? tools.cellposeDetection(imgMicro, tools.cellposeModelMicro, tools.cellposeDiamMicro, tools.minMicroVol, tools.maxMicroVol) :
-                        tools.microgliaSegmentation(imgMicro, tools.minMicroVol, tools.maxMicroVol);
+                    tools.print("- Segmenting microglia -");
+                    microPop = tools.cellsSegmentation(imgMicro, tools.microThMethod, tools.minMicroVol, tools.maxMicroVol, cal);
                 }
                
                 // Save results
-                tools.saveResults(vesselPop, microPop, rois, imgVessels, imgMicro, microResults, globalResults, rootName, outDir);
+                tools.saveResults(vesselPop, microPop, rois, imgVessels, imgMicro, cal, microResults, globalResults, rootName, outDir);
                 
                 tools.closeImage(imgVessels);
                 if (imgMicro != null) 
