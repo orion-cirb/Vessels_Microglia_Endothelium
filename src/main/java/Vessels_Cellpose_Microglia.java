@@ -72,8 +72,9 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
             }
             
             // Create output folder for results files and images
+            String vesselMethodName = (tools.vesselSegMethod == "Cellpose")? tools.cellposeModelVessel : tools.vesselThMethod;
             String microMethodName = (channels[1].equals("None")) ? "" : tools.microThMethod + "_";
-            String outDir = imageDir + File.separator + "Results_" + tools.cellposeModelVessel + "_" + microMethodName +
+            String outDir = imageDir + File.separator + "Results_" + vesselMethodName + "_" + microMethodName +
                     new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()) + File.separator;
             if (!Files.exists(Paths.get(outDir))) {
                 new File(outDir).mkdir();
@@ -119,7 +120,7 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 // Find image calibration
                 Calibration cal = tools.findImageCalib(meta);
                                 
-                // Read vessels and microglia channels
+                // Open vessels and microglia channels
                 tools.print("- Opening channels -");
                 ImagePlus imgVessels = IJ.openImage(processDir + rootName + "-Vessels-normalized.tif");
                 ImagePlus imgMicro = null;
@@ -138,23 +139,22 @@ public class Vessels_Cellpose_Microglia implements PlugIn {
                 tools.print("- Loading ROIs -");
                 List<Roi> rois = tools.loadRois(imageDir + File.separator + rootName, imgVessels, rootName);
                 
-                // Detect vessels
-                tools.print("- Detecting vessels -");
-                Objects3DIntPopulation vesselPop = tools.cellposeDetection(imgVessels, tools.cellposeModelsPath+tools.cellposeModelVessel, tools.cellposeDiamVessel, tools.minVesselVol, tools.maxVesselVol, cal);
+                // Segment vessels
+                tools.print("- Segmenting vessels -");
+                ImagePlus imgVesselMask = tools.vesselSegmentation(imgVessels, cal);
                 
                 // Segment microglia
                 Objects3DIntPopulation microPop = new Objects3DIntPopulation();
                 if (imgMicro != null) {
                     tools.print("- Segmenting microglia -");
-                    microPop = tools.cellsSegmentation(imgMicro, tools.microThMethod, tools.minMicroVol, tools.maxMicroVol, cal);
+                    microPop = tools.cellsSegmentation(imgMicro, cal);
                 }
                
                 // Save results
-                tools.saveResults(vesselPop, microPop, rois, imgVessels, imgMicro, cal, microResults, globalResults, rootName, outDir);
-                
+                tools.saveResults(imgVesselMask, microPop, rois, imgVessels, imgMicro, cal, microResults, globalResults, rootName, outDir);
+
                 tools.closeImage(imgVessels);
-                if (imgMicro != null) 
-                    tools.closeImage(imgMicro);
+                if (imgMicro != null) tools.closeImage(imgMicro);
             }
             microResults.close();
             globalResults.close();

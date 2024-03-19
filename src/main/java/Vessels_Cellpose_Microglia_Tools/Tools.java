@@ -6,10 +6,12 @@ import fiji.util.gui.GenericDialogPlus;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.Roi;
+import ij.gui.WaitForUserDialog;
 import ij.io.FileSaver;
 import ij.measure.Calibration;
 import ij.plugin.Duplicator;
 import ij.plugin.RGBStackMerge;
+import ij.plugin.RoiEnlarger;
 import ij.plugin.frame.RoiManager;
 import ij.process.AutoThresholder;
 import ij.util.ThreadUtil;
@@ -21,7 +23,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.stream.IntStream;
 import javax.swing.ImageIcon;
@@ -32,6 +33,7 @@ import loci.formats.meta.IMetadata;
 import loci.plugins.BF;
 import loci.plugins.in.ImporterOptions;
 import loci.plugins.util.ImageProcessorReader;
+import mcib3d.geom.Point3D;
 import mcib3d.geom2.Object3DInt;
 import mcib3d.geom2.Objects3DIntPopulation;
 import mcib3d.geom2.measurements.Measure2Colocalisation;
@@ -56,7 +58,7 @@ import sc.fiji.analyzeSkeleton.SkeletonResult;
 
 
 /**
- * @authors Philippe Mailly & Héloïse Monnet
+ * @authors Héloïse Monnet & Philippe Mailly
  */
 public class Tools {
     
@@ -68,18 +70,23 @@ public class Tools {
     String[] chNames = {"Vessels: ", "Microglia (optional): "};
         
     // Vessels detection
+    public String[] vesselSegMethods = {"Cellpose", "Thresholding"};
+    public String vesselSegMethod;
+    public double minVesselVol = 70;
+    // Cellpose method
     public final String cellposeEnvDir = IJ.isWindows()? System.getProperty("user.home")+File.separator+"miniconda3"+File.separator+"envs"+File.separator+"CellPose" : "/opt/miniconda3/envs/cellpose";
     public final String cellposeModelsPath = (IJ.isWindows()) ? System.getProperty("user.home")+"\\.cellpose\\models\\" : System.getProperty("user.home")+"/.cellpose/models/";
     public double cellposeStitchTh = 1;
     public String cellposeModelVessel;
     public int cellposeDiamVessel = 35;
-    public double minVesselVol = 100;
-    public double maxVesselVol = Double.MAX_VALUE;
+    // Thresholding method
+    public String vesselThMethod = "Otsu";
     
     // Microglia segmentation
-    public String microThMethod = "Triangle";
+    public String microThMethod = "Li";
     public double minMicroVol = 20;
-    public double maxMicroVol = Double.MAX_VALUE;
+    private double roiDilation = 50; // um
+    private int microLabel;
     
     
     /**
@@ -190,20 +197,25 @@ public class Tools {
         gd.setInsets​(0, 80, 0);
         gd.addImage(icon);
       
-        gd.addMessage("Channels", Font.getFont("Monospace"), Color.blue);
+        gd.addMessage("Channels", new Font("Monospace", Font.BOLD, 12), Color.blue);
         for (int n = 0; n < chNames.length; n++) {
             gd.addChoice(chNames[n], channels, channels[n]);
         }
         
-        gd.addMessage("Vessels detection", Font.getFont("Monospace"), Color.blue);
+        gd.addMessage("Vessels segmentation", new Font("Monospace", Font.BOLD, 12), Color.blue);
+        gd.addChoice("Segmentation method", vesselSegMethods, vesselSegMethods[0]);
+        gd.addNumericField("Min vessel volume (µm3): ", minVesselVol, 2);
+        gd.addMessage("Cellpose", new Font("Monospace", Font.PLAIN, 12), Color.blue);
         String[] models = findCellposeModels();
         gd.addChoice("Cellpose model: ", models, models[0]);
-        gd.addNumericField("Min vessel volume (µm3): ", minVesselVol, 2);
-        
-        gd.addMessage("Microglia segmentation", Font.getFont("Monospace"), Color.blue);
+        gd.addMessage("Thresholding", new Font("Monospace", Font.PLAIN, 12), Color.blue);
         String[] thMethods = AutoThresholder.getMethods();
+        gd.addChoice("Threshold method: ", thMethods, vesselThMethod); 
+        
+        gd.addMessage("Microglia segmentation", new Font("Monospace", Font.BOLD, 12), Color.blue);
         gd.addChoice("Threshold method: ", thMethods, microThMethod);        
         gd.addNumericField("Min cell volume (µm3): ", minMicroVol, 2);
+        gd.addNumericField("Max cell-vessel distance (µm):", roiDilation, 0);
         
         gd.addHelp(helpUrl);
         gd.showDialog();
@@ -212,11 +224,14 @@ public class Tools {
         for (int n = 0; n < chChoices.length; n++) 
             chChoices[n] = gd.getNextChoice();
 
-        cellposeModelVessel = gd.getNextChoice();
+        vesselSegMethod = gd.getNextChoice();
         minVesselVol = gd.getNextNumber();
+        cellposeModelVessel = gd.getNextChoice();
+        vesselThMethod = gd.getNextChoice();
         
         microThMethod = gd.getNextChoice();
         minMicroVol = gd.getNextNumber();
+        roiDilation = gd.getNextNumber();
         
         if (gd.wasCanceled())
             chChoices = null;
@@ -225,7 +240,7 @@ public class Tools {
     
         
     /**
-     * Find vessels cellpose models in cellpose path
+     * Find vessel cellpose models in cellpose path
      */
     public String[] findCellposeModels() {
         String[] files = new File(cellposeModelsPath).list();
@@ -342,40 +357,57 @@ public class Tools {
      * - let CellPose reconstruct cells in 3D using the stitch threshold parameters
      * @throws java.io.IOException
      */
-    public Objects3DIntPopulation cellposeDetection(ImagePlus img, String model, int diameter, double minVol, double maxVol, Calibration cal) throws IOException{
-        // Define CellPose settings
-        CellposeTaskSettings settings = new CellposeTaskSettings(model, 1, diameter, cellposeEnvDir);
-        settings.setStitchThreshold(cellposeStitchTh);
-        settings.useGpu(true);
+    public ImagePlus vesselSegmentation(ImagePlus img, Calibration cal) throws IOException{
+        ImagePlus imgBin = null;
+        if(vesselSegMethod == "Cellpose") {
+            // Define CellPose settings
+            CellposeTaskSettings settings = new CellposeTaskSettings(cellposeModelsPath+cellposeModelVessel, 1, cellposeDiamVessel, cellposeEnvDir);
+            settings.setStitchThreshold(cellposeStitchTh);
+            settings.useGpu(true);
 
-        // Run CellPose
-        ImagePlus imgIn = new Duplicator().run(img);
-        CellposeSegmentImgPlusAdvanced cellpose = new CellposeSegmentImgPlusAdvanced(settings, imgIn);
-        ImagePlus imgOut = cellpose.run();
+            // Run CellPose
+            ImagePlus imgIn = new Duplicator().run(img);
+            CellposeSegmentImgPlusAdvanced cellpose = new CellposeSegmentImgPlusAdvanced(settings, imgIn);
+            imgBin = cellpose.run();
+            
+            closeImage(imgIn);
+            
+        } else if(vesselSegMethod == "Thresholding") {
+            ImagePlus imgMed = medianFilter(img, true, 2, 0);
+            ImagePlus imgDOG = DOG(imgMed, 5, 10);
+            imgBin = threshold(imgDOG, vesselThMethod);
 
+            closeImage(imgMed);
+            closeImage(imgDOG);
+        }
+        
         // Remove small objects and connect remaining ones
-        ImagePlus imgClose = close_filter(imgOut, 6, 1);
-        ImagePlus imgBin = median3D_filter(imgClose, true, 1, 0);
-        imgBin.setCalibration(cal);
+        ImagePlus imgClose = closingFilter(imgBin, 6, 1);
+        ImagePlus imgOut = medianFilter(imgClose, true, 1, 0);
+        imgOut.setCalibration(cal);
 
         // Get population of detections
-        Objects3DIntPopulation pop = getPopFromImage(imgBin);
+        Objects3DIntPopulation pop = getPopFromImage(imgOut);
         System.out.println("Nb objects detected: " + pop.getNbObjects());
-        popFilterSize(pop, minVol, maxVol);
+        popFilterSize(pop, minVesselVol, Double.MAX_VALUE);
         System.out.println("Nb objects remaining after size filtering: " + pop.getNbObjects());
+        
+        // Draw population in image
+        ImageHandler imhMask = ImageHandler.wrap(img).createSameDimensions();
+        for (Object3DInt obj: pop.getObjects3DInt())
+            obj.drawObject(imhMask, 255);
 
-        closeImage(imgIn);
-        closeImage(imgOut);
-        closeImage(imgClose);
         closeImage(imgBin);
-        return(pop);
+        closeImage(imgClose);
+        closeImage(imgOut);
+        return(imhMask.getImagePlus());
     }
     
     
     /**
      * Closing filtering using CLIJ2
      */ 
-    private ImagePlus close_filter(ImagePlus img, double sizeXY, double sizeZ) {
+    private ImagePlus closingFilter(ImagePlus img, double sizeXY, double sizeZ) {
        ClearCLBuffer imgCL = clij2.push(img);
        ClearCLBuffer imgCLMax = clij2.create(imgCL);
        clij2.maximum3DBox(imgCL, imgCLMax, sizeXY, sizeXY, sizeZ);
@@ -388,26 +420,54 @@ public class Tools {
        clij2.release(imgCLMax);
        clij2.release(imgCLMin);
        return(imgMin);
-    } 
-        
+    }
+    
     
     /**
      * 3D median filtering using CLIJ2
      */ 
-    public ImagePlus median3D_filter(ImagePlus img, boolean sliceBySlice, double sizeXY, double sizeZ) {
+    public ImagePlus medianFilter(ImagePlus img, boolean sliceBySlice, double sizeXY, double sizeZ) {
         ClearCLBuffer imgCL = clij2.push(img); 
         ClearCLBuffer imgCLMed = clij2.create(imgCL);
         if (sliceBySlice)
-            clij2.median3DSliceBySliceBox(imgCL, imgCLMed, sizeXY, sizeXY);
+            clij2.median3DSliceBySliceSphere(imgCL, imgCLMed, sizeXY, sizeXY);
         else
-            clij2.median3DBox(imgCL, imgCLMed, sizeXY, sizeXY, sizeZ);
+            clij2.median3DSphere(imgCL, imgCLMed, sizeXY, sizeXY, sizeZ);
         ImagePlus imgMed = clij2.pull(imgCLMed);
         clij2.release(imgCL);
         clij2.release(imgCLMed);
         return(imgMed);
     }
     
+            
+    /**
+     * Difference of Gaussians using CLIJ
+     */ 
+    public ImagePlus DOG(ImagePlus img, double size1, double size2) {
+        ClearCLBuffer imgCL = clij2.push(img);
+        ClearCLBuffer imgCLDOG = clij2.create(imgCL);
+        clij2.differenceOfGaussian2D(imgCL, imgCLDOG, size1, size1, size2, size2);
+        clij2.release(imgCL);
+        ImagePlus imgDOG = clij2.pull(imgCLDOG); 
+        clij2.release(imgCLDOG);
+        return(imgDOG);
+    }
+
     
+    /**
+     * Automatic thresholding using CLIJ2
+     */
+    public ImagePlus threshold(ImagePlus img, String thMed) {
+        ClearCLBuffer imgCL = clij2.push(img);
+        ClearCLBuffer imgCLBin = clij2.create(imgCL);
+        clij2.automaticThreshold(imgCL, imgCLBin, thMed);
+        ImagePlus imgBin = clij2.pull(imgCLBin);
+        clij2.release(imgCL);
+        clij2.release(imgCLBin);
+        return(imgBin);
+    }
+    
+   
     /**
      * Return population of 3D objects population from binary image
      */
@@ -432,15 +492,15 @@ public class Tools {
     /**
      * Segment microglia with median filtering + Otsu thresholding + closing filtering
      */
-    public Objects3DIntPopulation cellsSegmentation(ImagePlus imgIn, String thMethod, double minVol, double maxVol, Calibration cal) {
-        ImagePlus imgMed = median3D_filter(imgIn, false, 1, 1);
-        ImagePlus imgBin = threshold(imgMed, thMethod);
-        ImagePlus imgClose = close_filter(imgBin, 2, 2);
+    public Objects3DIntPopulation cellsSegmentation(ImagePlus imgIn, Calibration cal) {
+        ImagePlus imgMed = medianFilter(imgIn, false, 2, 1);
+        ImagePlus imgBin = threshold(imgMed, microThMethod);
+        ImagePlus imgClose = closingFilter(imgBin, 2, 2);
         imgClose.setCalibration(cal);
         
         Objects3DIntPopulation pop = getPopFromImage(imgClose);
         System.out.println("Nb objects detected: " + pop.getNbObjects());
-        popFilterSize(pop, minVol, maxVol);
+        popFilterSize(pop, minMicroVol, Double.MAX_VALUE);
         System.out.println("Nb objects remaining after size filtering: " + pop.getNbObjects());
         
         closeImage(imgMed);
@@ -449,158 +509,93 @@ public class Tools {
         return(pop);
     }
     
-
-    /**
-     * Automatic thresholding using CLIJ2
-     */
-    public ImagePlus threshold(ImagePlus img, String thMed) {
-        ClearCLBuffer imgCL = clij2.push(img);
-        ClearCLBuffer imgCLBin = clij2.create(imgCL);
-        clij2.automaticThreshold(imgCL, imgCLBin, thMed);
-        ImagePlus imgBin = clij2.pull(imgCLBin);
-        clij2.release(imgCL);
-        clij2.release(imgCLBin);
-        return(imgBin);
-    }
-    
     
     /** 
      * Compute parameters and save results for each ROI
      * @throws java.io.IOException
      */
-    public void saveResults(Objects3DIntPopulation vesselsPop, Objects3DIntPopulation microPop, List<Roi> rois,
+    public void saveResults(ImagePlus imgVesselMask, Objects3DIntPopulation microPop, List<Roi> rois,
             ImagePlus imgVessels, ImagePlus imgMicro, Calibration cal, BufferedWriter microResults, BufferedWriter globalResults, 
             String rootName, String outDir) throws IOException {
         
         ImageHandler imhVessels = ImageHandler.wrap(imgVessels).createSameDimensions();
+        ImageHandler imhSkel = imhVessels.createSameDimensions();
         ImageHandler imhMicro = imhVessels.createSameDimensions();
-        int microLabel = 1;
+        microLabel = 1;
         
         for (Roi roi: rois) {
             print("- Computing parameters and saving results for ROI " + roi.getName() + " -");
-            boolean roiTranslation = roi.getProperty("translation").equals("0_0")? false: true;
             
-            // Get ROI volume
+            // Write ROI parameters in global results file
+            boolean roiTranslation = roi.getProperty("translation").equals("0_0")? false: true;
             imgVessels.setRoi(roi);
             double roiVol = imgVessels.getStatistics().area * imgVessels.getNSlices() * cal.pixelDepth;
             imgVessels.deleteRoi();
+            globalResults.write(rootName+"\t"+cal.pixelWidth+"\t"+roi.getName()+"\t"+roiTranslation+"\t"+roiVol);
+            globalResults.flush();
 
-            // Get vessels in ROI as one object
-            ImagePlus imgVesselsMask = getObjInsideRoi(vesselsPop, imgVessels, roi, cal);
-            Object3DInt vesselsObj = new Object3DInt(ImageHandler.wrap(imgVesselsMask));
-            double vesselsVol = new MeasureVolume(vesselsObj).getVolumeUnit();
-            double vesselsDensity = vesselsVol / roiVol * 1e6;
-                            
+            // Get vessels in translated ROI
+            ImagePlus imgVesselMaskRoi = clearOutsideRoi(imgVesselMask, roi, false, cal);
+            double vesselVol = new MeasureVolume(new Object3DInt(ImageHandler.wrap(imgVesselMaskRoi))).getVolumeUnit();
+            double vesselDensity = vesselVol / roiVol * 1e6;
+
+            // Compute vessels skeleton
+            ImagePlus imgVesselSkel = skeletonize3D(imgVesselMaskRoi, cal);
+            Object3DInt objVesselSkel = new Object3DInt(ImageHandler.wrap(imgVesselSkel));
+            IJ.run(imgVesselSkel, "8-bit","");
+            
+            // Get vessels in translated dilated ROI
+            ImagePlus imgVesselMaskRoiDil = clearOutsideRoi(imgVesselMask, roi, true, cal);
+            Object3DInt objVesselMaskRoiDil = new Object3DInt(ImageHandler.wrap(imgVesselMaskRoiDil));
+            
             // Compute vessels distance map
-            ImageFloat vesselsDistMap = localThickness3D(imgVesselsMask, false, cal);
+            ImageFloat vesselDistMap = localThickness3D(imgVesselMaskRoiDil, false, cal);
 
-            // Compute vessels skeleton and its parameters
-            ImagePlus imgVesselsSkel = skeletonize3D(imgVesselsMask, cal);
-            Object3DInt vesselsSkelObj = new Object3DInt(ImageHandler.wrap(imgVesselsSkel));
-            IJ.run(imgVesselsSkel, "8-bit","");
-            
-            // Write results
-            if(vesselsVol == 0) {
-                globalResults.write(rootName+"\t"+cal.pixelWidth+"\t"+roi.getName()+"\t"+roiTranslation+"\t"+roiVol+"\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0");
-                globalResults.flush();
-            } else {
-                HashMap<String, Double> skelParams = computeSkelParams(imgVesselsSkel, vesselsDistMap.getImagePlus());
+            // Write vessels parameters in global results file
+            writeVesselParams(imgVesselSkel, vesselDistMap.getImagePlus(), vesselVol, vesselDensity, globalResults);
 
-                globalResults.write(rootName+"\t"+cal.pixelWidth+"\t"+roi.getName()+"\t"+roiTranslation+"\t"+roiVol+"\t"+vesselsVol+"\t"+vesselsDensity+"\t"+
-                    skelParams.get("totalLength")+"\t"+skelParams.get("meanLength")+"\t"+
-                    skelParams.get("lengthLongestBranch")+"\t"+skelParams.get("nbBranches").intValue()+"\t"+
-                    skelParams.get("nbJunctions").intValue()+"\t"+skelParams.get("nbEndpoints").intValue()+"\t"+
-                    skelParams.get("meanDiameter")+"\t"+skelParams.get("stdDiameter")+"\t"+skelParams.get("minDiameter")+"\t"+
-                    skelParams.get("maxDiameter"));
-                globalResults.flush();
-            }
-            
             Objects3DIntPopulation microPopInRoi = new Objects3DIntPopulation();
             if (imgMicro != null) {
-                // Get microglia in ROI as a population
-                microPopInRoi = getPopInsideRoi(microPop, imgMicro, roi, cal);
+                // Get microglia in translated ROI
+                microPopInRoi = getPopInsideRoi(microPop, imgMicro, roi);
+                
                 // Compute vessels inverse distance maps
-                ImageFloat vesselsDistMapInv = localThickness3D(imgVesselsMask, true, cal);
-                
-                // Compute microglia parameters
-                int nbVAM=0, nbVTM=0, nbVDM = 0;
-                for (Object3DInt micro: microPopInRoi.getObjects3DInt()) {
-                    micro.setLabel(microLabel);
-                    microLabel++;
-                    
-                    double microVol = new MeasureVolume(micro).getVolumeUnit();
-                    
-                    if(vesselsVol == 0) {
-                        microResults.write(rootName+"\t"+roi.getName()+"\t"+(int)micro.getLabel()+"\t"+microVol+"\t"+0+"\t"+
-                            Double.NaN+"\t"+Double.NaN+"\t"+Double.NaN+"\n");
-                        microResults.flush();
-                        
-                        nbVDM++;
-                    } else {
-                        double borderDist = new Measure2Distance(micro, vesselsObj).getValue(Measure2Distance.DIST_BB_UNIT);
-                        double vesselDiam = 2*vesselsDistMap.getPixel(new Measure2Distance(micro, vesselsSkelObj).getBorder2Pix());
-                        double colocVol = getColocVol(micro, vesselsObj, cal);
-                        double centroidDist = vesselsDistMapInv.getPixel(new MeasureCentroid​(micro).getCentroidAsPoint());
+                ImageFloat vesselDistMapInv = localThickness3D(imgVesselMaskRoiDil, true, cal);
 
-                        microResults.write(rootName+"\t"+roi.getName()+"\t"+(int)micro.getLabel()+"\t"+microVol+"\t"+colocVol+"\t"+
-                            centroidDist+"\t"+borderDist+"\t"+vesselDiam+"\n");
-                        microResults.flush();
-                        
-                        if(colocVol == 0) nbVDM++;
-                        else {
-                            if(centroidDist == 0) nbVAM++;
-                            else nbVTM++;
-                        }
-                    }
-                }
-                globalResults.write("\t"+microPopInRoi.getNbObjects()+"\t"+nbVAM+"\t"+nbVTM+"\t"+nbVDM);
-                globalResults.flush();
-                
-                vesselsDistMapInv.closeImagePlus();
-            }
+                // Write microglia parameters in micro and global results files
+                writeMicroParams(microPopInRoi, objVesselMaskRoiDil, objVesselSkel, vesselDistMap, vesselDistMapInv, vesselVol, cal, rootName, roi.getName(), microResults, globalResults);
             
+                vesselDistMapInv.closeImagePlus();
+            }
             globalResults.write("\n");
             globalResults.flush();
-                
+
             // Draw results
             System.out.println("Drawing results...");
-            vesselsObj.drawObject(imhVessels, 128);
+            objVesselMaskRoiDil.drawObject(imhVessels, 128);
+            objVesselSkel.drawObject(imhSkel, 255);
             if (microPopInRoi.getNbObjects() != 0)
                 microPopInRoi.drawInImage(imhMicro);
-            
-            closeImage(imgVesselsMask);
-            vesselsDistMap.closeImagePlus();
-            closeImage(imgVesselsSkel);
+
+            closeImage(imgVesselMaskRoi);
+            closeImage(imgVesselSkel);
+            closeImage(imgVesselMaskRoiDil);
+            vesselDistMap.closeImagePlus();
         }
         
-        drawResults(imhVessels, imhMicro, imgVessels, imgMicro, cal, rootName, outDir);
+        drawResults(imhVessels, imhSkel, imhMicro, imgVessels, imgMicro, cal, rootName, outDir);
         imhVessels.closeImagePlus();
+        imhSkel.closeImagePlus();
         imhMicro.closeImagePlus();
     }  
     
     
     /**
-     * Clear objects outside ROI and return remaining population as one object 
-     */
-    private ImagePlus getObjInsideRoi(Objects3DIntPopulation pop, ImagePlus img, Roi roi, Calibration cal) {
-        // Get population as one 3D object
-        ImageHandler imh = ImageHandler.wrap(img).createSameDimensions();
-        for (Object3DInt obj: pop.getObjects3DInt())
-            obj.drawObject(imh, 255);
-        
-        // Clear objects outside ROI
-        ImagePlus imgMask = imh.getImagePlus();
-        clearOutsideRoi(imgMask, roi);
-        
-        imgMask.setCalibration(cal);
-        return(imgMask);
-    }
-    
-    
-    /**
      * Clear image outside ROI translated across stack 
      */
-    private void clearOutsideRoi(ImagePlus img, Roi roi) {
+    private ImagePlus clearOutsideRoi(ImagePlus imgIn, Roi roi, boolean dilate, Calibration cal) {
+        ImagePlus img = new Duplicator().run(imgIn);
+                
         int nbSlices = img.getNSlices();
         String[] translation = roi.getProperty("translation").split("_");
         double x = Double.valueOf(translation[0]);
@@ -608,7 +603,7 @@ public class Tools {
         double x_step = x / (nbSlices-1);
         double y_step = y / (nbSlices-1);
         
-        img.setRoi(roi);
+        img.setRoi(dilate ? RoiEnlarger.enlarge(roi, roiDilation/cal.pixelWidth) : roi);
         for(int i=1; i <= nbSlices; i++) {
             img.setPosition(i);
             if(i > 1)
@@ -617,6 +612,8 @@ public class Tools {
         }
         IJ.run(img, "Translate... ", "x="+(-1*x)+" y="+(-1*y)); // in pixels
         img.deleteRoi();
+        
+        return(img);
     }
     
     
@@ -649,65 +646,108 @@ public class Tools {
     
     
     /**
-     * Compute skeleton parameters (length, number of branches, junctions, endpoints...)
+     * Compute skeleton parameters and write all vessels parameters in results file (length, number of branches, junctions, endpoints...)
      */ 
-    private HashMap<String, Double> computeSkelParams(ImagePlus skel, ImagePlus distMap) {       
+    private void writeVesselParams(ImagePlus skel, ImagePlus distMap, double vesselVol, double vesselDensity, 
+            BufferedWriter globalResults) throws IOException {       
         System.out.println("Computing vessels parameters...");
-        HashMap<String, Double> params = new HashMap<>();
-        
-        AnalyzeSkeleton_ analyzeSkeleton = new AnalyzeSkeleton_();
-        AnalyzeSkeleton_.calculateShortestPath = true;
-        analyzeSkeleton.setup("", skel);
-        SkeletonResult skeletonResult = analyzeSkeleton.run(AnalyzeSkeleton_.NONE, false, true, null, true, false);
-        
-        double[] branchLengths = skeletonResult.getAverageBranchLength();
-        int[] branchNumbers = skeletonResult.getBranches();
-        int totalLength = 0;
-        for (int i = 0; i < branchNumbers.length; i++)
-            totalLength += branchNumbers[i] * branchLengths[i];
-        params.put("totalLength", (double)totalLength);
-        params.put("meanLength", StatUtils.mean(branchLengths));
-        params.put("lengthLongestBranch", StatUtils.max(skeletonResult.getMaximumBranchLength()));
-        params.put("nbBranches", (double)IntStream.of(branchNumbers).sum());
-        params.put("nbJunctions", (double)IntStream.of(skeletonResult.getJunctions()).sum());
-        params.put("nbEndpoints", (double)IntStream.of(skeletonResult.getEndPoints()).sum());
-        
-        ArrayList<Point> allVoxels = skeletonResult.getListOfSlabVoxels();
-        ArrayList<Point> junctionVoxels = skeletonResult.getListOfJunctionVoxels();
-        ArrayList<Point> endVoxels = skeletonResult.getListOfEndPoints();
-        allVoxels.addAll(junctionVoxels);
-        allVoxels.addAll(endVoxels);
-        DescriptiveStatistics diameters = new DescriptiveStatistics();
-        for (Point pt: allVoxels) {
-            distMap.setZ(pt.z);
-            double diam = distMap.getProcessor().getPixelValue(pt.x, pt.y)*2;
-            if (diam > 0)
-                diameters.addValue(diam);
+        if(vesselVol == 0) {
+            globalResults.write("\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0");
+            globalResults.flush();
+        } else {
+            AnalyzeSkeleton_ analyzeSkeleton = new AnalyzeSkeleton_();
+            analyzeSkeleton.setup("", skel);
+            // Params: int pruneIndex, boolean pruneEnds, boolean shortPath, ImagePlus origIP, boolean silent, boolean verbose
+            SkeletonResult skeletonResult = analyzeSkeleton.run(AnalyzeSkeleton_.NONE, false, false, null, true, false);
+
+            double[] branchLengths = skeletonResult.getAverageBranchLength();
+            int[] branchNumbers = skeletonResult.getBranches();
+            int totalLength = 0;
+            for (int i = 0; i < branchNumbers.length; i++)
+                totalLength += branchNumbers[i] * branchLengths[i];
+            double meanLength = StatUtils.mean(branchLengths);
+            double lengthLongestBranch = StatUtils.max(skeletonResult.getMaximumBranchLength());
+            int nbBranches = IntStream.of(branchNumbers).sum();
+            int nbJunctions = IntStream.of(skeletonResult.getJunctions()).sum();
+            int nbEndpoints = IntStream.of(skeletonResult.getEndPoints()).sum();
+
+            ArrayList<Point> voxels = skeletonResult.getListOfSlabVoxels();
+            voxels.addAll(skeletonResult.getListOfJunctionVoxels());
+            voxels.addAll(skeletonResult.getListOfEndPoints());
+            DescriptiveStatistics diameters = new DescriptiveStatistics();
+            for (Point pt: voxels) {
+                distMap.setZ(pt.z);
+                double diam = distMap.getProcessor().getPixelValue(pt.x, pt.y)*2;
+                if (diam > 0) diameters.addValue(diam);
+            }
+
+            globalResults.write("\t"+vesselVol+"\t"+vesselDensity+"\t"+totalLength+"\t"+meanLength+"\t"+
+                    lengthLongestBranch+"\t"+nbBranches+"\t"+nbJunctions+"\t"+nbEndpoints+"\t"+
+                    diameters.getMean()+"\t"+diameters.getStandardDeviation()+"\t"+
+                    diameters.getMin()+"\t"+diameters.getMax());
+            globalResults.flush();
         }
-        params.put("meanDiameter", diameters.getMean());
-        params.put("stdDiameter", diameters.getStandardDeviation());
-        params.put("minDiameter", diameters.getMin());
-        params.put("maxDiameter", diameters.getMax());
-        return(params);
     }
     
     
     /**
-     * Clear objects outside ROI and return remaining population as one object 
+     * Get population of objects with their centroid into ROI translated across stack 
      */
-     private Objects3DIntPopulation getPopInsideRoi(Objects3DIntPopulation pop, ImagePlus img, Roi roi, Calibration cal) {
-        ImageHandler imh = ImageHandler.wrap(img).createSameDimensions();
-        pop.drawInImage(imh);
+     private Objects3DIntPopulation getPopInsideRoi(Objects3DIntPopulation popIn, ImagePlus img, Roi roi) {
+        Objects3DIntPopulation popOut = new Objects3DIntPopulation();
         
-        // Clear objects outside ROI
-        ImagePlus imgMask = imh.getImagePlus();
-        clearOutsideRoi(imgMask, roi);
+        int nbSlices = img.getNSlices();
+        String[] translation = roi.getProperty("translation").split("_");
+        double x = Double.valueOf(translation[0]);
+        double y = Double.valueOf(translation[1]);
+        double x_step = x / (nbSlices-1);
+        double y_step = y / (nbSlices-1);
         
-        imgMask.setCalibration(cal);
-        Objects3DIntPopulation microPop = new Objects3DIntPopulation(ImageHandler.wrap(imgMask));
-        
-        closeImage(imgMask);
-        return(microPop);
+        for(Object3DInt obj: popIn.getObjects3DInt()) {
+            Point3D centroid = new MeasureCentroid(obj).getCentroidAsPoint();
+            if(centroid.getRoundZ() > 1)    
+                roi.translate(centroid.getRoundZ()*x_step, centroid.getRoundZ()*y_step);
+            if(roi.contains(centroid.getRoundX(), centroid.getRoundY()))
+               popOut.addObject(obj);
+            if(centroid.getRoundZ() > 1) 
+                roi.translate(-1*centroid.getRoundZ()*x_step, -1*centroid.getRoundZ()*y_step);
+        }
+        return(popOut);
+    }
+     
+     
+    /**
+     * Compute and write microglia parameters in results files
+     */ 
+    private void writeMicroParams(Objects3DIntPopulation microPop, Object3DInt vesselObj, Object3DInt vesselSkelObj, 
+            ImageFloat vesselDistMap, ImageFloat vesselDistMapInv, double vesselVol, Calibration cal, 
+            String rootName, String roiName, BufferedWriter microResults, BufferedWriter globalResults) throws IOException {
+        System.out.println("Computing microglia parameters...");
+        int nbVAM=0, nbVTM=0, nbVDM = 0;
+        for (Object3DInt micro: microPop.getObjects3DInt()) {
+            double microVol = new MeasureVolume(micro).getVolumeUnit();
+            microResults.write(rootName+"\t"+roiName+"\t"+microLabel+"\t"+microVol);
+            micro.setLabel(microLabel);
+            microLabel++;
+            if(vesselVol == 0) {
+                microResults.write("\t"+0+"\t"+Double.NaN+"\t"+Double.NaN+"\t"+Double.NaN+"\n");
+
+                nbVDM++;
+            } else {
+                double borderDist = new Measure2Distance(micro, vesselObj).getValue(Measure2Distance.DIST_BB_UNIT);
+                double vesselDiam = 2*vesselDistMap.getPixel(new Measure2Distance(micro, vesselSkelObj).getBorder2Pix());
+                double colocVol = getColocVol(micro, vesselObj, cal);
+                double centroidDist = vesselDistMapInv.getPixel(new MeasureCentroid​(micro).getCentroidAsPoint());
+                microResults.write("\t"+colocVol+"\t"+centroidDist+"\t"+borderDist+"\t"+vesselDiam+"\n");
+
+                if(colocVol == 0) nbVDM++;
+                else if(colocVol != 0 && centroidDist == 0) nbVAM++;
+                else if(colocVol != 0 && centroidDist != 0) nbVTM++;
+            }
+            microResults.flush();
+        }
+        globalResults.write("\t"+microPop.getNbObjects()+"\t"+nbVAM+"\t"+nbVTM+"\t"+nbVDM);
+        globalResults.flush();
     }
      
     
@@ -722,11 +762,12 @@ public class Tools {
     }
     
     
-    private void drawResults(ImageHandler imhVessels, ImageHandler imhMicro, ImagePlus imgVessels, ImagePlus imgMicro, Calibration cal, String rootName, String outDir)  {
+    public void drawResults(ImageHandler imhVessels, ImageHandler imhSkel, ImageHandler imhMicro, ImagePlus imgVessels, ImagePlus imgMicro, Calibration cal, String rootName, String outDir)  {
         IJ.run(imhVessels.getImagePlus(), "Red", "");
+        IJ.run(imhSkel.getImagePlus(), "Blue", "");
         IJ.run(imhMicro.getImagePlus(), "Green", "");
         
-        ImagePlus[] imgColors = {imhVessels.getImagePlus(), null, null, imgVessels, null};
+        ImagePlus[] imgColors = {imhVessels.getImagePlus(), null, imhSkel.getImagePlus(), imgVessels, null};
         if (imgMicro != null) {
             imgColors[1] = imhMicro.getImagePlus();
             imgColors[4] = imgMicro;
