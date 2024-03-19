@@ -2,7 +2,7 @@
 
 * **Developed for:** Nicolas
 * **Team:** Garel
-* **Date:** October 2023
+* **Date:** March 2024
 * **Software:** Fiji
 
 ### Images description
@@ -20,7 +20,9 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 
 ### Plugin description
 
-* Detect vessels with Quantile Based Normalization + Cellpose + closing + median filtering
+* Detect vessels with either:
+  * Quantile Based Normalization + Cellpose + closing + median filtering
+  * Quantile Based Normalization + median filtering + DoG + thresholding + median filtering
 * Compute vessels volume, length, diameter and number of branches, junctions, endpoints, etc
 * If microglia channel provided,
   * Detect cells with median filtering + thresholding + closing
@@ -35,4 +37,4 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 
 ### Version history
 
-Version 1 released on October 27, 2023.
+Version 1 released on March 19, 2024.
