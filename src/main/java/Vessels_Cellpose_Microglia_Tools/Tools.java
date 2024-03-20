@@ -6,7 +6,6 @@ import fiji.util.gui.GenericDialogPlus;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.Roi;
-import ij.gui.WaitForUserDialog;
 import ij.io.FileSaver;
 import ij.measure.Calibration;
 import ij.plugin.Duplicator;
@@ -215,7 +214,7 @@ public class Tools {
         gd.addMessage("Microglia segmentation", new Font("Monospace", Font.BOLD, 12), Color.blue);
         gd.addChoice("Threshold method: ", thMethods, microThMethod);        
         gd.addNumericField("Min cell volume (µm3): ", minMicroVol, 2);
-        gd.addNumericField("Max cell-vessel distance (µm):", roiDilation, 0);
+        gd.addNumericField("ROI dilation (µm):", roiDilation, 0);
         
         gd.addHelp(helpUrl);
         gd.showDialog();
@@ -764,7 +763,7 @@ public class Tools {
     
     public void drawResults(ImageHandler imhVessels, ImageHandler imhSkel, ImageHandler imhMicro, ImagePlus imgVessels, ImagePlus imgMicro, Calibration cal, String rootName, String outDir)  {
         IJ.run(imhVessels.getImagePlus(), "Red", "");
-        IJ.run(imhSkel.getImagePlus(), "Blue", "");
+        IJ.run(imhSkel.getImagePlus(), "Cyan", "");
         IJ.run(imhMicro.getImagePlus(), "Green", "");
         
         ImagePlus[] imgColors = {imhVessels.getImagePlus(), null, imhSkel.getImagePlus(), imgVessels, null};
