@@ -1,4 +1,4 @@
-package Vessels_Cellpose_Microglia_Tools.Cellpose;
+package Vessels_Microglia_Endothelium_Tools.Cellpose;
 
 
 public class CellposeTaskSettings {

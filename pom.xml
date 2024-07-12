@@ -12,18 +12,19 @@
     </parent>
         
     <groupId>fr.cirb.orion</groupId>
-    <artifactId>Vessels_Cellpose_Microglia</artifactId>
+    <artifactId>Vessels_Microglia_Endothelium</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
     
-    <name>Vessels_Cellpose_Microglia</name>
+    <name>Vessels_Microglia_Endothelium</name>
     <description> 
-        Detect vessels and microglial cells with Cellpose
-        Analyze vessels skeleton
-        Compute distance between each microglial cell and its nearest vessel
+        Detect vessels, microglial cells and endothelial nuclei
+        Analyze vessels structure
+        Compute distance between microglial cells and their nearest vessel
+        Give number of endothelial nuclei
     </description>
-    <url>https://github.com/orion-cirb/Vessels_Cellpose_Microglia</url>
-    <inceptionYear>2024</inceptionYear>
+    <url>https://github.com/orion-cirb/Vessels_Microglia_Endothelium</url>
+    <inceptionYear>2023</inceptionYear>
     <organization>
         <name>orion-cirb</name>
         <url>http://orion-cirb.fr/</url>
@@ -61,11 +62,11 @@
     </mailingLists>
     
     <scm>
-        <url>https://github.com/orion-cirb/Vessels_Cellpose_Microglia</url> 
+        <url>https://github.com/orion-cirb/Vessels_Microglia_Endothelium</url> 
     </scm>
     <issueManagement>
         <system>GitHub Issues</system>
-        <url>https://github.com/orion-cirb/Vessels_Cellpose_Microglia</url>
+        <url>https://github.com/orion-cirb/Vessels_Microglia_Endothelium</url>
     </issueManagement>
     <ciManagement>
         <system>None</system>
@@ -86,23 +87,6 @@
     </repositories>
 
     <dependencies>
-        <!-- ImageJ dependencies -->
-        <!--<dependency>
-            <groupId>net.imagej</groupId>
-            <artifactId>ij</artifactId>
-        </dependency>-->
-        <!-- Fiji dependencies -->
-        <!--<dependency>
-            <groupId>sc.fiji</groupId>
-            <artifactId>fiji-lib</artifactId>
-        </dependency>-->
-        <!-- Bioformats dependencies -->
-        <!--<dependency>
-            <groupId>ome</groupId>
-            <artifactId>bioformats_package</artifactId>
-            <version>6.11.0</version>
-            <type>pom</type>
-        </dependency>-->
         <!-- 3D Image Suite -->
         <dependency>
             <groupId>mcib</groupId>
