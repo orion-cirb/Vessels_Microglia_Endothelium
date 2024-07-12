@@ -2,6 +2,7 @@ import Vessels_Microglia_Endothelium_Tools.QuantileBasedNormalization;
 import Vessels_Microglia_Endothelium_Tools.Tools;
 import ij.*;
 import ij.gui.Roi;
+import ij.gui.WaitForUserDialog;
 import ij.measure.Calibration;
 import ij.plugin.PlugIn;
 import ij.process.LUT;
@@ -146,12 +147,14 @@ public class Vessels_Microglia_Endothelium implements PlugIn {
                     imgVessels = BF.openImagePlus(options)[indexCh];
                 }
                 imgVessels.setLut(lut);
+                IJ.run(imgVessels, "16-bit", "");
                 
                 ImagePlus imgMicro = null;
                 if (!channels[1].equals("None")) {
                     int indexCh = ArrayUtils.indexOf(channelNames, channels[1]);
                     imgMicro = BF.openImagePlus(options)[indexCh];
                     imgMicro.setLut(lut);
+                    IJ.run(imgMicro, "16-bit", "");
                 }
                 
                 ImagePlus imgEndo = null;
@@ -159,6 +162,7 @@ public class Vessels_Microglia_Endothelium implements PlugIn {
                     int indexCh = ArrayUtils.indexOf(channelNames, channels[2]);
                     imgEndo = BF.openImagePlus(options)[indexCh];
                     imgEndo.setLut(lut);
+                    IJ.run(imgEndo, "16-bit", "");
                 }
                 
                 // Load ROIs (if provided)

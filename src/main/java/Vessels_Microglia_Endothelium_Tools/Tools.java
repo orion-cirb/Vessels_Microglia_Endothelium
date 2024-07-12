@@ -7,6 +7,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.gui.Roi;
+import ij.gui.WaitForUserDialog;
 import ij.io.FileSaver;
 import ij.measure.Calibration;
 import ij.plugin.Concatenator;
@@ -514,7 +515,7 @@ public class Tools {
         System.setOut(console);
         imgBin.setDimensions​(1, nSlices, 1);
         imgBin.setCalibration(cal);
-
+        
         // Get population of objects
         ImagePlus imgStitch = stitch3D(imgBin);
         Objects3DIntPopulation pop = new Objects3DIntPopulation(ImageHandler.wrap(imgStitch));
@@ -933,7 +934,7 @@ public class Tools {
             if(centroid.getRoundZ() > 1)    
                 roi.translate(centroid.getRoundZ()*x_step, centroid.getRoundZ()*y_step);
             if(roi.contains(centroid.getRoundX(), centroid.getRoundY()))
-               popOut.addObject(obj);
+                popOut.addObject(obj);
             if(centroid.getRoundZ() > 1) 
                 roi.translate(-1*centroid.getRoundZ()*x_step, -1*centroid.getRoundZ()*y_step);
         }
