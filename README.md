@@ -43,4 +43,4 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 
 ### Version history
 
-Version 1 released on July 12, 2024.
+Version 1 released on July 15, 2024.
