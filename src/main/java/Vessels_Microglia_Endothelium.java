@@ -2,7 +2,6 @@ import Vessels_Microglia_Endothelium_Tools.QuantileBasedNormalization;
 import Vessels_Microglia_Endothelium_Tools.Tools;
 import ij.*;
 import ij.gui.Roi;
-import ij.gui.WaitForUserDialog;
 import ij.measure.Calibration;
 import ij.plugin.PlugIn;
 import ij.process.LUT;

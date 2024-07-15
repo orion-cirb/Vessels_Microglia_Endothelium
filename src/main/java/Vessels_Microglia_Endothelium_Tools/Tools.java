@@ -7,7 +7,6 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.gui.Roi;
-import ij.gui.WaitForUserDialog;
 import ij.io.FileSaver;
 import ij.measure.Calibration;
 import ij.plugin.Concatenator;
@@ -75,7 +74,7 @@ public class Tools {
     private String[] chNames = {"Vessels: ", "Microglia (optional): ", "Endothelial nuclei (optional): "};
         
     // Vessels detection
-    public boolean vesselNormalization = false;
+    public boolean vesselNormalization = true;
     private String[] vesselSegMethods = {"Thresholding", "Cellpose"};
     public String vesselSegMethod;
     private double minVesselVol = 70; // um3
