@@ -735,6 +735,7 @@ public class Tools {
         
         ImageHandler imhVessels = ImageHandler.wrap(imgVessels).createSameDimensions();
         ImageHandler imhMicro = imhVessels.createSameDimensions();
+        ImageHandler imhMicroClass = imhVessels.createSameDimensions();
         ImageHandler imhEndo = imhVessels.createSameDimensions();
         
         ImageStack stackTagSkel = new ImageStack(imgVessels.getWidth(), imgVessels.getHeight());
@@ -769,7 +770,7 @@ public class Tools {
                 // Get vessels in (translated) dilated ROI
                 ImagePlus imgVesselMaskRoiDil = clearOutsideRoi(imgVesselMask, roi, true, cal);
                 new Object3DInt(ImageHandler.wrap(imgVesselMaskRoiDil)).drawObject(imhVessels, 128);
-                saveMicroResultsInRoi(roi, microPop, imgMicro, imhMicro, microLabel, imgVesselMaskRoiDil, imgVesselSkel,
+                saveMicroResultsInRoi(roi, microPop, imgMicro, imhMicro, imhMicroClass, microLabel, imgVesselMaskRoiDil, imgVesselSkel,
                                       vesselDistMap, vesselDistMapInv, cal, vesselVol, microResults, globalResults, imgName, roi.getName());
                 closeImage(imgVesselMaskRoiDil);
             }
@@ -783,12 +784,12 @@ public class Tools {
         }
         
         // Save drawings
-        saveImages(stackTagSkel, imhVessels, imhMicro, imhEndo, imgVessels, imgMicro, imgEndo, cal, imgName, dirName);
+        saveImages(stackTagSkel, imhVessels, imhMicro, imhMicroClass, imhEndo, imgVessels, imgMicro, imgEndo, cal, imgName, dirName);
         
         imhVessels.closeImagePlus();
         imhMicro.closeImagePlus();
+        imhMicroClass.closeImagePlus();
         imhEndo.closeImagePlus();
-        
     }
     
     
@@ -944,7 +945,7 @@ public class Tools {
     /**
      * Compute and write microglia parameters in results files
      */ 
-    private void saveMicroResultsInRoi(Roi roi, Objects3DIntPopulation microPop, ImagePlus imgMicro, ImageHandler imhMicro, 
+    private void saveMicroResultsInRoi(Roi roi, Objects3DIntPopulation microPop, ImagePlus imgMicro, ImageHandler imhMicro, ImageHandler imhMicroClass,
                                        AtomicInteger microLabel, ImagePlus imgVesselMaskRoiDil, ImagePlus imgVesselSkel, 
                                        ImageFloat vesselDistMap, ImageFloat vesselDistMapInv, Calibration cal, double vesselVol, 
                                        BufferedWriter microResults, BufferedWriter globalResults, 
@@ -980,9 +981,16 @@ public class Tools {
                 microResults.write("\t"+colocVol+"\t"+centroidDist+"\t"+borderDist+"\t"+vesselDiam+"\n");
                 microResults.flush();
 
-                if(colocVol == 0) nbVDM++;
-                else if(colocVol != 0 && centroidDist == 0) nbVAM++;
-                else if(colocVol != 0 && centroidDist != 0) nbVTM++;
+                if(colocVol == 0) {
+                    nbVDM++;
+                    micro.drawObject(imhMicroClass, 3);
+                } else if(colocVol != 0 && centroidDist == 0) {
+                    nbVAM++;
+                    micro.drawObject(imhMicroClass, 1);
+                } else if(colocVol != 0 && centroidDist != 0) {
+                    nbVTM++;
+                    micro.drawObject(imhMicroClass, 2);
+                }
             }            
         }
         
@@ -1025,7 +1033,7 @@ public class Tools {
     }
     
     
-    private void saveImages(ImageStack stackTagSkel, ImageHandler imhVessels, ImageHandler imhMicro, ImageHandler imhEndo, 
+    private void saveImages(ImageStack stackTagSkel, ImageHandler imhVessels, ImageHandler imhMicro, ImageHandler imhMicroClass, ImageHandler imhEndo, 
             ImagePlus imgVessels, ImagePlus imgMicro, ImagePlus imgEndo, Calibration cal, String rootName, String outDir)  {
         
         ImagePlus imgTagSkel = new ImagePlus("", stackTagSkel);
@@ -1059,6 +1067,16 @@ public class Tools {
         imgMerge2.setCalibration(cal);
         new FileSaver(imgMerge2).saveAsTiff(outDir+rootName+".tif");
         closeImage(imgMerge2);
+        
+        if (imgMicro != null) {
+            ImagePlus[] imgStack3 = {null, imhMicroClass.getImagePlus(), null, imgVessels};
+            ImagePlus imgMerge3 = new RGBStackMerge().mergeHyperstacks(imgStack3, true);
+            imgMerge3.setC(1);
+            IJ.run(imgMerge3, "Green Fire Blue", "");
+            imgMerge3.setDisplayRange(0, 4);
+            new FileSaver(imgMerge3).saveAsTiff(outDir+rootName+"_microglia.tif");
+            closeImage(imgMerge3);
+        }
     }
     
     
