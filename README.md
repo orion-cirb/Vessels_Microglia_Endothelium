@@ -21,9 +21,7 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 
 ### Plugin description
 
-* Detect vessels with either:
-  * Quantile Based Normalization (optional) + Cellpose + closing + median filtering
-  * Quantile Based Normalization (optional) + median filtering + DoG + thresholding + closing + median filtering
+* Detect vessels with Quantile Based Normalization + median filtering + DoG filtering + thresholding + closing + median filtering + fill holes
 * Compute vessels skeleton and provide vessels volume, diameter, length, branches number, junctions numbers, etc.
 * If microglia channel provided,
   * Detect cells with median filtering + thresholding + closing
@@ -38,9 +36,8 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 
 * **3DImageSuite** Fiji plugin
 * **CLIJ2** Fiji plugin
-* **Cellpose** conda environment + *vessels* or *vessels2* model 
 * **Omnipose** conda environment + *cyto2_omni* pretrained model
 
 ### Version history
 
-Version 1 released on July 15, 2024.
+Version 2 released on November 27, 2024.
