@@ -78,10 +78,8 @@ public class Vessels_Microglia_Endothelium implements PlugIn {
             }
             
             // Create output folder for results files and images
-            String vesselNorm = tools.vesselNormalization? "Norm_" : "";
-            String vesselMethodName = (tools.vesselSegMethod == "Cellpose")? tools.cellposeModelVessel : tools.vesselThMethod;
             String microMethodName = (channels[1].equals("None")) ? "" : tools.microThMethod + "_";
-            String outDir = imageDir + File.separator + "Results_" + vesselNorm + vesselMethodName + "_" + microMethodName +
+            String outDir = imageDir + File.separator + "Results_" + tools.dogSigma1 + "-" + tools.dogSigma2 + "_" + tools.vesselThMethod + "_" + microMethodName +
                             new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()) + File.separator;
             if (!Files.exists(Paths.get(outDir))) {
                 new File(outDir).mkdir();
@@ -102,9 +100,9 @@ public class Vessels_Microglia_Endothelium implements PlugIn {
             }
             tools.writeHeaders(channels, globalResults, vesselResults, microResults);
             
-            // If asked in dialog box, normalize vessels channel
+            // Normalize vessels channel
             String normDir = imageDir + File.separator + "Normalization" + File.separator;
-            if (tools.vesselNormalization && !Files.exists(Paths.get(normDir))) {
+            if (!Files.exists(Paths.get(normDir))) {
                 tools.print("--- NORMALIZING IMAGES ---");
                 // Create output folder for normalized files
                 new File(normDir).mkdir();
@@ -138,22 +136,14 @@ public class Vessels_Microglia_Endothelium implements PlugIn {
                 tools.print("- Opening channels -");
                 LUT lut = LUT.createLutFromColor(Color.gray);
                 
-                ImagePlus imgVessels = null;
-                if (tools.vesselNormalization) { 
-                    imgVessels = IJ.openImage(normDir + rootName + "-vessels-normalized.tif");
-                } else {
-                    int indexCh = ArrayUtils.indexOf(channelNames, channels[0]);
-                    imgVessels = BF.openImagePlus(options)[indexCh];
-                }
+                ImagePlus imgVessels = IJ.openImage(normDir + rootName + "-vessels-normalized.tif");
                 imgVessels.setLut(lut);
-                IJ.run(imgVessels, "16-bit", "");
                 
                 ImagePlus imgMicro = null;
                 if (!channels[1].equals("None")) {
                     int indexCh = ArrayUtils.indexOf(channelNames, channels[1]);
                     imgMicro = BF.openImagePlus(options)[indexCh];
                     imgMicro.setLut(lut);
-                    IJ.run(imgMicro, "16-bit", "");
                 }
                 
                 ImagePlus imgEndo = null;
@@ -161,7 +151,6 @@ public class Vessels_Microglia_Endothelium implements PlugIn {
                     int indexCh = ArrayUtils.indexOf(channelNames, channels[2]);
                     imgEndo = BF.openImagePlus(options)[indexCh];
                     imgEndo.setLut(lut);
-                    IJ.run(imgEndo, "16-bit", "");
                 }
                 
                 // Load ROIs (if provided)

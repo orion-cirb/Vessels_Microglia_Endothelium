@@ -9,10 +9,12 @@ import ij.ImageStack;
 import ij.gui.Roi;
 import ij.io.FileSaver;
 import ij.measure.Calibration;
+import ij.measure.ResultsTable;
 import ij.plugin.Concatenator;
 import ij.plugin.Duplicator;
 import ij.plugin.RGBStackMerge;
 import ij.plugin.RoiEnlarger;
+import ij.plugin.filter.ParticleAnalyzer;
 import ij.plugin.frame.RoiManager;
 import ij.process.AutoThresholder;
 import ij.process.ByteProcessor;
@@ -74,27 +76,20 @@ public class Tools {
     private String[] chNames = {"Vessels: ", "Microglia (optional): ", "Endothelial nuclei (optional): "};
         
     // Vessels detection
-    public boolean vesselNormalization = true;
-    private String[] vesselSegMethods = {"Thresholding", "Cellpose"};
-    public String vesselSegMethod;
-    private double minVesselVol = 70; // um3
-    private double minVesselLength = 10; // um
-    // Cellpose method
-    private final String cellposeEnvPath = IJ.isWindows()? System.getProperty("user.home")+File.separator+"miniconda3"+File.separator+"envs"+File.separator+"CellPose" : "/opt/miniconda3/envs/cellpose";
-    private final String cellposeModelsPath = (IJ.isWindows()) ? System.getProperty("user.home")+"\\.cellpose\\models\\" : System.getProperty("user.home")+"/.cellpose/models/";
-    public String cellposeModelVessel;
-    private int cellposeDiamVessel = 35; // pix
-    private double cellposeStitchThVessel = 1;
-    // Thresholding method
-    public String vesselThMethod = "RenyiEntropy";
+    public int dogSigma1 = 3;
+    public int dogSigma2 = 6;
+    public String vesselThMethod = "Triangle";
+    private double maxHoleArea = 500; // µm2
+    private double minVesselVol = 70; // µm3
+    private double minVesselLength = 10; // µm
     
     // Microglia segmentation
     public String microThMethod = "Li";
-    private double microMinVol = 20; // um3
-    private double roiDilation = 50; // um
+    private double microMinVol = 20; // µm3
+    private double roiDilation = 50; // µm
     
     // Endothelial nuclei detection
-    private double endoMinVol = 20; // um3
+    private double endoMinVol = 20; // µm3
     // Omnipose
     private String omniposeEnvPath = IJ.isWindows()? System.getProperty("user.home")+File.separator+"miniconda3"+File.separator+"envs"+File.separator+"omnipose" : "/opt/miniconda3/envs/omnipose";
     private String omniposeModelsPath = IJ.isWindows()? System.getProperty("user.home")+"\\.cellpose\\models\\" : System.getProperty("user.home")+"/.cellpose/models/";
@@ -217,29 +212,26 @@ public class Tools {
         gd.setInsets​(0, 70, 0);
         gd.addImage(icon);
       
-        gd.addMessage("Channels", new Font("Monospace", Font.BOLD, 12), Color.blue);
+        gd.addMessage("Channels", new Font("Monospace", Font.PLAIN, 12), Color.blue);
         for (int n = 0; n < chNames.length; n++) {
             gd.addChoice(chNames[n], channels, channels[n]);
         }
         
-        gd.addMessage("Vessels segmentation", new Font("Monospace", Font.BOLD, 12), Color.blue);
-        gd.addNumericField("Min vessel volume (µm3): ", minVesselVol, 2);
-        gd.addNumericField("Min branch length (µm): ", minVesselLength, 2);
-        gd.addCheckbox("Quantile based normalization", vesselNormalization);
-        gd.addChoice("Segmentation method", vesselSegMethods, vesselSegMethods[0]);
-        gd.addMessage("Thresholding", new Font("Monospace", Font.PLAIN, 12), Color.blue);
+        gd.addMessage("Vessels segmentation", new Font("Monospace", Font.PLAIN, 12), Color.blue);
+        gd.addNumericField("DoG filter - Sigma 1: ", dogSigma1, 0);
+        gd.addNumericField("DoG filter - Sigma 2: ", dogSigma2, 0);
         String[] thMethods = AutoThresholder.getMethods();
         gd.addChoice("Threshold method: ", thMethods, vesselThMethod);
-        gd.addMessage("Cellpose", new Font("Monospace", Font.PLAIN, 12), Color.blue);
-        String[] models = findCellposeModels();
-        gd.addChoice("Cellpose model: ", models, models[0]);
+        gd.addNumericField("Max hole area (µm2): ", maxHoleArea, 2);
+        gd.addNumericField("Min vessel volume (µm3): ", minVesselVol, 2);
+        gd.addNumericField("Min branch length (µm): ", minVesselLength, 2);
         
-        gd.addMessage("Microglia segmentation", new Font("Monospace", Font.BOLD, 12), Color.blue);
+        gd.addMessage("Microglia segmentation", new Font("Monospace", Font.PLAIN, 12), Color.blue);
         gd.addChoice("Threshold method: ", thMethods, microThMethod);        
         gd.addNumericField("Min cell volume (µm3): ", microMinVol, 2);
         gd.addNumericField("ROI dilation (µm):", roiDilation, 0);
         
-        gd.addMessage("Endothelial nuclei segmentation", new Font("Monospace", Font.BOLD, 12), Color.blue); 
+        gd.addMessage("Endothelial nuclei segmentation", new Font("Monospace", Font.PLAIN, 12), Color.blue); 
         gd.addNumericField("Min nucleus volume (µm3): ", endoMinVol, 2);
         
         gd.addHelp(helpUrl);
@@ -249,13 +241,13 @@ public class Tools {
         for (int n = 0; n < chChoices.length; n++) 
             chChoices[n] = gd.getNextChoice();
 
+        dogSigma1 = (int) gd.getNextNumber();
+        dogSigma2 = (int) gd.getNextNumber();
+        vesselThMethod = gd.getNextChoice();
+        maxHoleArea = gd.getNextNumber();
         minVesselVol = gd.getNextNumber();
         minVesselLength = gd.getNextNumber();
-        vesselNormalization = gd.getNextBoolean();
-        vesselSegMethod = gd.getNextChoice();
-        vesselThMethod = gd.getNextChoice();
-        cellposeModelVessel = gd.getNextChoice();
-        
+
         microThMethod = gd.getNextChoice();
         microMinVol = gd.getNextNumber();
         roiDilation = gd.getNextNumber();
@@ -267,21 +259,7 @@ public class Tools {
         return(chChoices);
     }
     
-        
-    /**
-     * Get vessel Cellpose models in Cellpose models directory
-     */
-    private String[] findCellposeModels() {
-        String[] files = new File(cellposeModelsPath).list();
-        ArrayList<String> models = new ArrayList();
-        for (String f : files) {
-            if (f.contains("vessel")) 
-                models.add(f);
-        }
-        return (models.toArray(new String[0]));
-    }
-    
-    
+       
     /**
      * Write headers in results files
      */
@@ -413,38 +391,19 @@ public class Tools {
     
     
     /**
-     * Detect 3D vessels in a Z-stack with 2 different methods:
-     * - Cellpose 2D applied slice by slice 
-     * - Median filtering + DoG filtering + automatic thresholding applied slice by slice 
+     * Detect 3D vessels in a Z-stack using:
+     * median filter + DoG filter + automatic thresholding + closing filter + median filter
      * @throws java.io.IOException
      */
     public ImagePlus vesselSegmentation(ImagePlus img, Calibration cal) throws IOException{
-        ImagePlus imgBin = null;
-        if(vesselSegMethod == "Cellpose") {
-            // Define CellPose settings
-            CellposeTaskSettings settings = new CellposeTaskSettings(cellposeModelsPath+cellposeModelVessel, 1, cellposeDiamVessel, cellposeEnvPath);
-            settings.setStitchThreshold(cellposeStitchThVessel);
-            settings.useGpu(true);
-
-            // Run CellPose
-            ImagePlus imgIn = new Duplicator().run(img);
-            CellposeSegmentImgPlusAdvanced cellpose = new CellposeSegmentImgPlusAdvanced(settings, imgIn);
-            imgBin = cellpose.run();
-            
-            closeImage(imgIn);
-            
-        } else if(vesselSegMethod == "Thresholding") {
-            ImagePlus imgMed = medianFilter(img, true, 2, 0);
-            ImagePlus imgDOG = DOG(imgMed, 5, 10);
-            imgBin = threshold(imgDOG, vesselThMethod);
-
-            closeImage(imgMed);
-            closeImage(imgDOG);
-        }
+        ImagePlus imgMed = medianFilter(img, 2, 1);
+        ImagePlus imgDOG = DOG(imgMed, dogSigma1, dogSigma2);
+        ImagePlus imgBin = threshold(imgDOG, vesselThMethod);
         
         // Remove small objects and connect remaining ones
-        ImagePlus imgClose = closingFilter(imgBin, 6, 1);
-        ImagePlus imgOut = medianFilter(imgClose, false, 2, 1);
+        ImagePlus imgClose = closingFilter(imgBin, 4, 1);
+        ImagePlus imgMed2 = medianFilter(imgClose, 2, 1);
+        ImagePlus imgOut = fillHoles(imgMed2, 0, maxHoleArea, cal);
         imgOut.setCalibration(cal);
 
         // Get population of detections
@@ -458,8 +417,11 @@ public class Tools {
         for (Object3DInt obj: pop.getObjects3DInt())
             obj.drawObject(imhMask, 255);
 
+        closeImage(imgMed);
+        closeImage(imgDOG);
         closeImage(imgBin);
         closeImage(imgClose);
+        closeImage(imgMed2);
         closeImage(imgOut);
         return(imhMask.getImagePlus());
     }
@@ -469,7 +431,7 @@ public class Tools {
      * Segment microglia with median filtering + thresholding + closing filtering
      */
     public Objects3DIntPopulation microSegmentation(ImagePlus img, Calibration cal) {
-        ImagePlus imgMed = medianFilter(img, false, 2, 1);
+        ImagePlus imgMed = medianFilter(img, 2, 1);
         ImagePlus imgBin = threshold(imgMed, microThMethod);
         ImagePlus imgClose = closingFilter(imgBin, 2, 2);
         imgClose.setCalibration(cal);
@@ -496,7 +458,7 @@ public class Tools {
         int nSlices = img.getDimensions()[3];
        
         // Median filter
-        ImagePlus imgMed = medianFilter(img, false, 1, 1);
+        ImagePlus imgMed = medianFilter(img, 1, 1);
         imgMed.setDimensions​(1, 1, nSlices);
         
         // Set Omnipose settings
@@ -533,34 +495,12 @@ public class Tools {
     
     
     /**
-     * Closing filtering using CLIJ2
-     */ 
-    private ImagePlus closingFilter(ImagePlus img, double sizeXY, double sizeZ) {
-       ClearCLBuffer imgCL = clij2.push(img);
-       ClearCLBuffer imgCLMax = clij2.create(imgCL);
-       clij2.maximum3DBox(imgCL, imgCLMax, sizeXY, sizeXY, sizeZ);
-
-       ClearCLBuffer imgCLMin = clij2.create(imgCLMax);
-       clij2.minimum3DBox(imgCLMax, imgCLMin, sizeXY, sizeXY, sizeZ);
-       ImagePlus imgMin = clij2.pull(imgCLMin);
-       
-       clij2.release(imgCL);
-       clij2.release(imgCLMax);
-       clij2.release(imgCLMin);
-       return(imgMin);
-    }
-    
-    
-    /**
      * 3D median filtering using CLIJ2
      */ 
-    private ImagePlus medianFilter(ImagePlus img, boolean sliceBySlice, double sizeXY, double sizeZ) {
+    private ImagePlus medianFilter(ImagePlus img, double sizeXY, double sizeZ) {
         ClearCLBuffer imgCL = clij2.push(img); 
         ClearCLBuffer imgCLMed = clij2.create(imgCL);
-        if (sliceBySlice)
-            clij2.median3DSliceBySliceSphere(imgCL, imgCLMed, sizeXY, sizeXY);
-        else
-            clij2.median3DSphere(imgCL, imgCLMed, sizeXY, sizeXY, sizeZ);
+        clij2.median3DSphere(imgCL, imgCLMed, sizeXY, sizeXY, sizeZ);
         ImagePlus imgMed = clij2.pull(imgCLMed);
         clij2.release(imgCL);
         clij2.release(imgCLMed);
@@ -593,6 +533,63 @@ public class Tools {
         clij2.release(imgCL);
         clij2.release(imgCLBin);
         return(imgBin);
+    }
+    
+    
+    /**
+     * Closing filtering using CLIJ2
+     */ 
+    private ImagePlus closingFilter(ImagePlus img, double sizeXY, double sizeZ) {
+       ClearCLBuffer imgCL = clij2.push(img);
+       ClearCLBuffer imgCLMax = clij2.create(imgCL);
+       clij2.maximum3DSphere(imgCL, imgCLMax, sizeXY, sizeXY, sizeZ);
+
+       ClearCLBuffer imgCLMin = clij2.create(imgCLMax);
+       clij2.minimum3DSphere(imgCLMax, imgCLMin, sizeXY, sizeXY, sizeZ);
+       ImagePlus imgMin = clij2.pull(imgCLMin);
+       
+       clij2.release(imgCL);
+       clij2.release(imgCLMax);
+       clij2.release(imgCLMin);
+       return(imgMin);
+    }
+    
+
+    /**
+     * Fill holes with areas between the specified min and max values
+     */ 
+    private ImagePlus fillHoles(ImagePlus img, double minArea, double maxArea, Calibration cal) {
+        ImagePlus imgFill = img.duplicate();
+
+        // Invert image to detect background holes
+        IJ.setRawThreshold(imgFill, 1, 255);
+        IJ.run(imgFill, "Convert to Mask", "background=Dark black");
+        IJ.run(imgFill, "Invert", "stack");
+        
+        // Analyze particles to detect holes within the specified area range
+        double pixArea = cal.pixelWidth*cal.pixelHeight;
+        ParticleAnalyzer pa = new ParticleAnalyzer(ParticleAnalyzer.ADD_TO_MANAGER, 0, new ResultsTable(), minArea/pixArea, maxArea/pixArea); // In pixels^2
+        RoiManager rm = new RoiManager(true);
+        pa.setRoiManager(rm);
+        
+        for (int s = 1; s <= imgFill.getNSlices(); s++) {
+            imgFill.setSlice(s);
+            pa.analyze(imgFill);
+            
+            // Reinvert image before filling holes
+            IJ.run(imgFill, "Invert", "slice");
+            
+            // Fill the detected holes
+            for (int i = 0; i < rm.getCount(); i++) {
+                imgFill.setRoi(rm.getRoi(i));
+                imgFill.setColor(Color.white);
+                IJ.run(imgFill, "Fill", "slice");
+            }
+            imgFill.deleteRoi();
+            rm.reset();
+        }
+        
+        return(imgFill);
     }
     
    
@@ -1058,12 +1055,12 @@ public class Tools {
         ImagePlus imgMerge2 = new RGBStackMerge().mergeHyperstacks(imgStack2, true);
         imgMerge2.setC(1);
         imgMerge2.setDisplayRange(0, 1);
-        imgMerge2.setC(2);
-        imgMerge2.setDisplayRange(0, 1);
-        imgMerge2.setC(4);
-        IJ.run(imgMerge2, "Grays", "");
-        imgMerge2.setC(5);
-        IJ.run(imgMerge2, "Grays", "");
+        if (imgMicro != null || imgEndo != null) {
+            imgMerge2.setC(2);
+            imgMerge2.setDisplayRange(0, 1);
+            imgMerge2.setC(4);
+            IJ.run(imgMerge2, "Grays", "");
+        }
         imgMerge2.setCalibration(cal);
         new FileSaver(imgMerge2).saveAsTiff(outDir+rootName+".tif");
         closeImage(imgMerge2);
@@ -1078,6 +1075,5 @@ public class Tools {
             closeImage(imgMerge3);
         }
     }
-    
     
 }
