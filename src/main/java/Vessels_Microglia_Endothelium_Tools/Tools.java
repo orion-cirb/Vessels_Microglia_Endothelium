@@ -70,7 +70,7 @@ import sc.fiji.analyzeSkeleton.SkeletonResult;
 public class Tools {
     
     private final ImageIcon icon = new ImageIcon(this.getClass().getResource("/Orion_icon.png"));
-    private final String helpUrl = "https://github.com/orion-cirb/Vessels_Microglia_Endothelium";
+    private final String helpUrl = "https://github.com/orion-cirb/Vessels_Microglia_Endothelium/tree/version2";
     private final CLIJ2 clij2 = CLIJ2.getInstance();
     
     private String[] chNames = {"Vessels: ", "Microglia (optional): ", "Endothelial nuclei (optional): "};
