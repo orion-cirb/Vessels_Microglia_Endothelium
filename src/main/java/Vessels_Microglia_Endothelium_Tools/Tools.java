@@ -76,17 +76,18 @@ public class Tools {
     private String[] chNames = {"Vessels: ", "Microglia (optional): ", "Endothelial nuclei (optional): "};
         
     // Vessels detection
-    public int dogSigma1 = 3;
-    public int dogSigma2 = 6;
+    public int dogSigma1 = 4;
+    public int dogSigma2 = 7;
     public String vesselThMethod = "Triangle";
     private double maxHoleArea = 500; // µm2
-    private double minVesselVol = 70; // µm3
+    private double minVesselVol = 500; // µm3
     private double minVesselLength = 10; // µm
     
     // Microglia segmentation
     public String microThMethod = "Li";
     private double microMinVol = 20; // µm3
     private double roiDilation = 50; // µm
+    private double vamVesselMaxDist = 2; // µm
     
     // Endothelial nuclei detection
     private double endoMinVol = 20; // µm3
@@ -214,7 +215,7 @@ public class Tools {
       
         gd.addMessage("Channels", new Font("Monospace", Font.PLAIN, 12), Color.blue);
         for (int n = 0; n < chNames.length; n++) {
-            gd.addChoice(chNames[n], channels, channels[n]);
+            gd.addChoice(chNames[n], channels, channels[Math.min(n, channels.length-1)]);
         }
         
         gd.addMessage("Vessels segmentation", new Font("Monospace", Font.PLAIN, 12), Color.blue);
@@ -230,6 +231,7 @@ public class Tools {
         gd.addChoice("Threshold method: ", thMethods, microThMethod);        
         gd.addNumericField("Min cell volume (µm3): ", microMinVol, 2);
         gd.addNumericField("ROI dilation (µm):", roiDilation, 0);
+        gd.addNumericField("Max VAM-vessel distance (µm):", vamVesselMaxDist, 2);
         
         gd.addMessage("Endothelial nuclei segmentation", new Font("Monospace", Font.PLAIN, 12), Color.blue); 
         gd.addNumericField("Min nucleus volume (µm3): ", endoMinVol, 2);
@@ -251,6 +253,7 @@ public class Tools {
         microThMethod = gd.getNextChoice();
         microMinVol = gd.getNextNumber();
         roiDilation = gd.getNextNumber();
+        vamVesselMaxDist = gd.getNextNumber();
         
         endoMinVol = gd.getNextNumber();
         
@@ -279,7 +282,7 @@ public class Tools {
         vesselResults.flush();
         
         if(channels[1] != "None")  {
-            microResults.write("Image name\tROI name\tCell ID\tCell volume (µm3)\tCell volume coloc with vessel (µm3)"
+            microResults.write("Image name\tROI name\tCell ID\tCell volume (µm3)\tCell type\tCell volume coloc with vessel (µm3)"
                     + "\tCell centroid distance to closest vessel (µm)\tCell border distance to closest vessel (µm)"
                     + "\tClosest vessel diameter (µm)\n");
             microResults.flush();
@@ -676,7 +679,7 @@ public class Tools {
      * Prune skeleton branches with length smaller than threshold
      * https://imagej.net/plugins/analyze-skeleton/
      */
-    public ImagePlus pruneSkeleton(ImagePlus image) {
+    public ImagePlus pruneSkeleton(ImagePlus image, Calibration cal) {
         // Analyze skeleton
         AnalyzeSkeleton_ skel = new AnalyzeSkeleton_();
         skel.setup("", image);
@@ -717,6 +720,7 @@ public class Tools {
             }
         }
         
+        prunedImage = skeletonize3D(prunedImage, cal);
         return(prunedImage);
     }
     
@@ -962,7 +966,7 @@ public class Tools {
             microResults.write(imgName+"\t"+roiName+"\t"+microLabel.get()+"\t"+microVol);
             micro.setLabel(microLabel.getAndIncrement());
             if(vesselVol == 0) {
-                microResults.write("\t"+Double.NaN+"\t"+Double.NaN+"\t"+Double.NaN+"\t"+Double.NaN+"\n");
+                microResults.write("\t"+Double.NaN+"\t"+Double.NaN+"\t"+Double.NaN+"\t"+Double.NaN+"\t"+Double.NaN+"\n");
                 microResults.flush();
                 nbVDM++;
             } else {  
@@ -974,20 +978,24 @@ public class Tools {
                 
                 Object3DInt skelObj = new Object3DInt(ImageHandler.wrap(imgVesselSkelRoiDil));
                 double vesselDiam = 2*vesselDistMap.getPixel(new Measure2Distance(micro, skelObj).getBorder2Pix());
-                
-                microResults.write("\t"+colocVol+"\t"+centroidDist+"\t"+borderDist+"\t"+vesselDiam+"\n");
-                microResults.flush();
-
+               
+                String cellType = ""; 
                 if(colocVol == 0) {
                     nbVDM++;
+                    cellType = "VDM";
                     micro.drawObject(imhMicroClass, 3);
-                } else if(colocVol != 0 && centroidDist == 0) {
-                    nbVAM++;
-                    micro.drawObject(imhMicroClass, 1);
-                } else if(colocVol != 0 && centroidDist != 0) {
+                } else if(colocVol != 0 && centroidDist > vamVesselMaxDist) {
                     nbVTM++;
+                    cellType = "VTM";
                     micro.drawObject(imhMicroClass, 2);
-                }
+                } else if(colocVol != 0 && centroidDist <= vamVesselMaxDist) {
+                    nbVAM++;
+                    cellType = "VAM";
+                    micro.drawObject(imhMicroClass, 1);
+                } 
+                
+                microResults.write("\t"+cellType+"\t"+colocVol+"\t"+centroidDist+"\t"+borderDist+"\t"+vesselDiam+"\n");
+                microResults.flush();
             }            
         }
         

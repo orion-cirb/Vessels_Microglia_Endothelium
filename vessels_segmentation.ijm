@@ -23,6 +23,8 @@ sigma2y = 6.0; // Same than sigma2x
 Ext.CLIJ2_differenceOfGaussian2D(image15, image16, sigma1x, sigma1y, sigma2x, sigma2y);
 Ext.CLIJ2_pull(image16);
 
+waitForUser;
+
 // 3. THRESHOLD
 Ext.CLIJ2_push(image16);
 image17 = "threshold";

@@ -165,7 +165,7 @@ public class Vessels_Microglia_Endothelium implements PlugIn {
                 tools.print("- Skeletonizing vessels mask -");
                 ImagePlus imgVesselSkel = tools.skeletonize3D(imgVesselMask, cal);
                 // Prune vessels skeleton small branches
-                imgVesselSkel = tools.pruneSkeleton(imgVesselSkel);
+                imgVesselSkel = tools.pruneSkeleton(imgVesselSkel, cal);
                 
                 // Compute vessels distance map
                 tools.print("- Computing vessels distance map -");
