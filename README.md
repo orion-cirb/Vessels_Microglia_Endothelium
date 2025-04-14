@@ -40,4 +40,4 @@ With each image can be provided a *.roi* or *.zip* file containing one or multip
 
 ### Version history
 
-Version 2 released on November 27, 2024.
+Version 2 modified on April 14, 2025.
