@@ -1,7 +1,7 @@
 # Vessels_Cellpose_Microglia
 
 * **Developed for:** Nicolas
-* **Team:** Garel
+* **Team:** Thion / Garel
 * **Date:** July 2024
 * **Software:** Fiji
 
